@@ -618,7 +618,7 @@ private fun TermsPage() {
 
         Spacer(modifier = Modifier.height(18.dp))
         Text(
-            text = "点击下方「开始使用」即表示你已阅读并同意以上条款",
+            text = "点击下方「下一步」即表示你已阅读并同意以上条款",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
