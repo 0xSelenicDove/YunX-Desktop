@@ -17,6 +17,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Bookmarks
 import androidx.compose.material.icons.outlined.Layers
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.Tune
@@ -76,6 +77,26 @@ private data class RiskyChange(
 )
 
 /**
+ * 需要二次风险确认的两个多账号下载开关：确认弹窗的标题与正文按它取。
+ *
+ * 用枚举而不是两个布尔状态：弹窗同一时刻只会有一个，语义上不会出现「两个都待确认」的非法态。
+ */
+private enum class MultiAccountRisk(val title: String, val message: String) {
+    MULTI_ACCOUNT(
+        "开启「多账号下载」？",
+        "请只登录你自己的账号。同一网络下频繁切换多个账号取链，部分网盘（尤其百度、夸克）" +
+            "可能触发风控：出现验证码、临时限流，甚至短期限制账号下载。功能仍在实验阶段，" +
+            "遇到异常可随时关闭。"
+    ),
+    MULTI_SOURCE(
+        "开启「单文件多源分片」？",
+        "同一个文件会被多个账号同时拉取，比多账号下载更容易触发风控；可能出现分片失败率上升、" +
+            "下载变慢或账号被临时限制。目前只支持夸克 / UC / 迅雷。功能仍在实验阶段，" +
+            "请自行评估风险。"
+    )
+}
+
+/**
  * 「实验性功能」二级页：集中管理高风险 / 可调下载参数，支持一键重置为默认值。
  *
  * 本页参数会影响下载行为，改动后对新任务生效；异常时点底部「重置为默认值」恢复。
@@ -98,6 +119,12 @@ fun ExperimentalFeaturesScreen(
     var preemptMinBps by remember { mutableStateOf(settingsRepo.slowPreemptMinBps) }
     var preemptMinAgeMs by remember { mutableStateOf(settingsRepo.slowPreemptMinAgeMs) }
     var homeShortcut by remember { mutableStateOf(settingsRepo.homeShortcutEnabled) }
+    // 多账号下载（C1）/ 单文件多源分片（C2）：两个实验性开关，默认全关
+    var multiAccount by remember { mutableStateOf(settingsRepo.multiAccountDownload) }
+    // 读取用口径（C1 关 ⇒ C2 无效），避免手改偏好后出现「C1 关着、C2 还显示开启」的错觉
+    var multiSource by remember { mutableStateOf(settingsRepo.multiSourceActive()) }
+    // 非 null = 正在二次确认哪一项（只有「开启」才需要确认，关闭直接生效）
+    var pendingMultiAccountRisk by remember { mutableStateOf<MultiAccountRisk?>(null) }
 
     var showBufferDialog by remember { mutableStateOf(false) }
     var showMinBpsDialog by remember { mutableStateOf(false) }
@@ -251,6 +278,64 @@ fun ExperimentalFeaturesScreen(
             )
             Spacer(modifier = Modifier.height(8.dp))
 
+            // 多账号下载（实验性 C1）：批量下载按文件轮换该网盘的不同账号取链
+            SettingsItem(
+                icon = Icons.Outlined.Person,
+                title = "多账号下载（实验性）",
+                description = if (multiAccount) {
+                    "已开启：批量下载按文件轮换不同账号取链（每个文件仍只用一个账号下载）"
+                } else {
+                    "默认关闭：批量下载只用主账号取链；开启前需二次确认风险"
+                },
+                onClick = {
+                    if (multiAccount) {
+                        multiAccount = false
+                        settingsRepo.multiAccountDownload = false
+                        // ★ C2 依赖 C1：关 C1 必须同时关 C2（prefs + 本地状态），
+                        //   否则会留下「多账号下载关了、单文件还在多账号取链」的不一致状态
+                        val multiSourceWasOn = multiSource
+                        settingsRepo.disableMultiSource()
+                        multiSource = false
+                        SnackbarController.show(
+                            if (multiSourceWasOn) {
+                                "已关闭多账号下载，单文件多源分片同步关闭"
+                            } else {
+                                "已关闭多账号下载"
+                            }
+                        )
+                    } else {
+                        // 开启前二次风险确认：取消时什么都没写，状态不变
+                        pendingMultiAccountRisk = MultiAccountRisk.MULTI_ACCOUNT
+                    }
+                },
+                trailing = { Switch(checked = multiAccount, onCheckedChange = null) }
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // 单文件多源分片（实验性 C2）：依赖 C1，C1 关闭时这一项不可操作
+            SettingsItem(
+                icon = Icons.Outlined.Layers,
+                title = "单文件多源分片（实验性）",
+                description = when {
+                    !multiAccount -> "需先开启「多账号下载」"
+                    multiSource -> "已开启：同一文件多账号各取直链、分片轮流下载"
+                    else -> "默认关闭：单个文件只用一个源下载；开启前需二次确认风险"
+                },
+                onClick = {
+                    when {
+                        !multiAccount -> SnackbarController.show("请先开启「多账号下载」")
+                        multiSource -> {
+                            multiSource = false
+                            settingsRepo.multiSourceDownload = false
+                            SnackbarController.show("已关闭单文件多源分片")
+                        }
+                        else -> pendingMultiAccountRisk = MultiAccountRisk.MULTI_SOURCE
+                    }
+                },
+                trailing = { Switch(checked = multiSource, onCheckedChange = null, enabled = multiAccount) }
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
             // 主页快捷方式
             SettingsItem(
                 icon = Icons.Outlined.Bookmarks,
@@ -282,7 +367,8 @@ fun ExperimentalFeaturesScreen(
             }
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "默认值：HTTP/2 关闭、读缓冲 64 KB、慢连接抢占开启（12 KB/s · 15 秒）、主页快捷方式关闭。",
+                text = "默认值：HTTP/2 关闭、读缓冲 64 KB、慢连接抢占开启（12 KB/s · 15 秒）、" +
+                    "多账号下载与单文件多源分片关闭、主页快捷方式关闭。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -449,6 +535,44 @@ fun ExperimentalFeaturesScreen(
         }
     )
 
+    // 多账号下载 / 单文件多源分片：开启前二次风险确认（只有「开启」需要确认）
+    pendingMultiAccountRisk?.let { risk ->
+        FadeAlertDialog(
+            visible = true,
+            onDismissRequest = { pendingMultiAccountRisk = null },
+            title = { Text(risk.title) },
+            text = {
+                Text(
+                    text = risk.message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        when (risk) {
+                            MultiAccountRisk.MULTI_ACCOUNT -> {
+                                multiAccount = true
+                                settingsRepo.multiAccountDownload = true
+                                SnackbarController.show("已开启多账号下载")
+                            }
+                            MultiAccountRisk.MULTI_SOURCE -> {
+                                multiSource = true
+                                settingsRepo.multiSourceDownload = true
+                                SnackbarController.show("已开启单文件多源分片")
+                            }
+                        }
+                        pendingMultiAccountRisk = null
+                    }
+                ) { Text("确认开启") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingMultiAccountRisk = null }) { Text("取消") }
+            }
+        )
+    }
+
     // 重置二次确认（窗口内覆盖层，遵循项目既有弹窗约定）
     FadeAlertDialog(
         visible = showResetConfirm,
@@ -464,6 +588,8 @@ fun ExperimentalFeaturesScreen(
                     text = "· HTTP/2：关闭\n" +
                         "· 读缓冲：64 KB\n" +
                         "· 慢连接抢占：开启（12 KB/s · 15 秒）\n" +
+                        "· 多账号下载：关闭\n" +
+                        "· 单文件多源分片：关闭\n" +
                         "· 主页快捷方式：关闭",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -486,6 +612,9 @@ fun ExperimentalFeaturesScreen(
                     preemptMinBps = settingsRepo.slowPreemptMinBps
                     preemptMinAgeMs = settingsRepo.slowPreemptMinAgeMs
                     homeShortcut = settingsRepo.homeShortcutEnabled
+                    // 多账号下载 / 单文件多源分片一并恢复默认（全关）
+                    multiAccount = settingsRepo.multiAccountDownload
+                    multiSource = settingsRepo.multiSourceActive()
                     onHomeShortcutChanged(settingsRepo.homeShortcutEnabled)
                     SnackbarController.show("已重置为默认值")
                 }

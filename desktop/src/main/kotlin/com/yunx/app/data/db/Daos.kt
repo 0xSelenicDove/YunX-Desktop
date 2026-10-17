@@ -8,71 +8,121 @@ import kotlinx.coroutines.flow.Flow
 
 interface QuarkAccountDao {
     fun observeAccount(): Flow<QuarkAccountEntity?>
+    fun observeAccounts(): Flow<List<QuarkAccountEntity>>
     suspend fun upsert(account: QuarkAccountEntity)
     suspend fun getAccount(): QuarkAccountEntity?
+    suspend fun getAccounts(): List<QuarkAccountEntity>
+    suspend fun setPrimary(id: String)
+    suspend fun updateRemark(id: String, remark: String)
+    suspend fun deleteById(id: String)
     suspend fun clear()
 }
 
 interface UCAccountDao {
     fun observeAccount(): Flow<UCAccountEntity?>
+    fun observeAccounts(): Flow<List<UCAccountEntity>>
     suspend fun upsert(account: UCAccountEntity)
     suspend fun getAccount(): UCAccountEntity?
+    suspend fun getAccounts(): List<UCAccountEntity>
+    suspend fun setPrimary(id: String)
+    suspend fun updateRemark(id: String, remark: String)
+    suspend fun deleteById(id: String)
     suspend fun clear()
 }
 
 interface XunleiAccountDao {
     fun observeAccount(): Flow<XunleiAccountEntity?>
+    fun observeAccounts(): Flow<List<XunleiAccountEntity>>
     suspend fun upsert(account: XunleiAccountEntity)
     suspend fun getAccount(): XunleiAccountEntity?
+    suspend fun getAccounts(): List<XunleiAccountEntity>
+    suspend fun setPrimary(id: String)
+    suspend fun updateRemark(id: String, remark: String)
+    suspend fun deleteById(id: String)
     suspend fun clear()
 }
 
 interface BaiduAccountDao {
     fun observeAccount(): Flow<BaiduAccountEntity?>
+    fun observeAccounts(): Flow<List<BaiduAccountEntity>>
     suspend fun upsert(account: BaiduAccountEntity)
     suspend fun getAccount(): BaiduAccountEntity?
+    suspend fun getAccounts(): List<BaiduAccountEntity>
+    suspend fun setPrimary(id: String)
+    suspend fun updateRemark(id: String, remark: String)
+    suspend fun deleteById(id: String)
     suspend fun clear()
 }
 
 interface C139AccountDao {
     fun observeAccount(): Flow<C139AccountEntity?>
+    fun observeAccounts(): Flow<List<C139AccountEntity>>
     suspend fun upsert(account: C139AccountEntity)
     suspend fun getAccount(): C139AccountEntity?
+    suspend fun getAccounts(): List<C139AccountEntity>
+    suspend fun setPrimary(id: String)
+    suspend fun updateRemark(id: String, remark: String)
+    suspend fun deleteById(id: String)
     suspend fun clear()
 }
 
 interface Pan123AccountDao {
     fun observeAccount(): Flow<Pan123AccountEntity?>
+    fun observeAccounts(): Flow<List<Pan123AccountEntity>>
     suspend fun upsert(account: Pan123AccountEntity)
     suspend fun getAccount(): Pan123AccountEntity?
+    suspend fun getAccounts(): List<Pan123AccountEntity>
+    suspend fun setPrimary(id: String)
+    suspend fun updateRemark(id: String, remark: String)
+    suspend fun deleteById(id: String)
     suspend fun clear()
 }
 
 interface Pan115AccountDao {
     fun observeAccount(): Flow<Pan115AccountEntity?>
+    fun observeAccounts(): Flow<List<Pan115AccountEntity>>
     suspend fun upsert(account: Pan115AccountEntity)
     suspend fun getAccount(): Pan115AccountEntity?
+    suspend fun getAccounts(): List<Pan115AccountEntity>
+    suspend fun setPrimary(id: String)
+    suspend fun updateRemark(id: String, remark: String)
+    suspend fun deleteById(id: String)
     suspend fun clear()
 }
 
 interface GuangYaAccountDao {
     fun observeAccount(): Flow<GuangYaAccountEntity?>
+    fun observeAccounts(): Flow<List<GuangYaAccountEntity>>
     suspend fun upsert(account: GuangYaAccountEntity)
     suspend fun getAccount(): GuangYaAccountEntity?
+    suspend fun getAccounts(): List<GuangYaAccountEntity>
+    suspend fun setPrimary(id: String)
+    suspend fun updateRemark(id: String, remark: String)
+    suspend fun deleteById(id: String)
     suspend fun clear()
 }
 
 interface ILanzouAccountDao {
     fun observeAccount(): Flow<ILanzouAccountEntity?>
+    fun observeAccounts(): Flow<List<ILanzouAccountEntity>>
     suspend fun upsert(account: ILanzouAccountEntity)
     suspend fun getAccount(): ILanzouAccountEntity?
+    suspend fun getAccounts(): List<ILanzouAccountEntity>
+    suspend fun setPrimary(id: String)
+    suspend fun updateRemark(id: String, remark: String)
+    suspend fun deleteById(id: String)
     suspend fun clear()
 }
 
 interface LanzouAccountDao {
     fun observeAccount(): Flow<LanzouAccountEntity?>
+    fun observeAccounts(): Flow<List<LanzouAccountEntity>>
     suspend fun upsert(account: LanzouAccountEntity)
     suspend fun getAccount(): LanzouAccountEntity?
+    suspend fun getAccounts(): List<LanzouAccountEntity>
+    suspend fun setPrimary(id: String)
+    suspend fun updateRemark(id: String, remark: String)
+    suspend fun deleteById(id: String)
     suspend fun clear()
 }
 

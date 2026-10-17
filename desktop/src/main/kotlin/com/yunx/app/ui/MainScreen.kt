@@ -69,6 +69,7 @@ import com.yunx.app.data.backup.AuthBackupManager
 import com.yunx.app.data.db.AppDatabase
 import com.yunx.app.data.download.ChunkDownloader
 import com.yunx.app.data.download.DownloadManager
+import com.yunx.app.data.download.DownloadPlatform
 import com.yunx.app.data.gopeed.GopeedEngine
 import com.yunx.app.data.network.BaiduApi
 import com.yunx.app.data.network.C139Api
@@ -91,6 +92,7 @@ import com.yunx.app.ui.components.CloseChoice
 import com.yunx.app.ui.components.CloseConfirmDialog
 import com.yunx.app.util.DesktopActions
 import com.yunx.app.util.TrayManager
+import com.yunx.app.data.repository.AccountDirectory
 import com.yunx.app.data.repository.BaiduAccountRepository
 import com.yunx.app.data.repository.BaiduResolveRepository
 import com.yunx.app.data.repository.C139AccountRepository
@@ -159,6 +161,7 @@ import com.yunx.app.ui.viewmodel.ILanzouAccountViewModel
 import com.yunx.app.ui.viewmodel.ILanzouCloudViewModel
 import com.yunx.app.ui.viewmodel.LanzouAccountViewModel
 import com.yunx.app.ui.viewmodel.LanzouCloudViewModel
+import com.yunx.app.ui.viewmodel.MultiAccountViewModel
 import com.yunx.app.ui.viewmodel.Pan115AccountViewModel
 import com.yunx.app.ui.viewmodel.Pan115CloudViewModel
 import com.yunx.app.ui.viewmodel.Pan123AccountViewModel
@@ -395,6 +398,31 @@ fun MainScreen(
     val lanzouViewModel: LanzouAccountViewModel = viewModel(
         factory = LanzouAccountViewModel.Factory(lanzouRepository)
     )
+    // 多账号目录：10 个平台统一的「列表 / 设主账号 / 改备注 / 退出单个账号」
+    val accountDirectory = remember(db) { AccountDirectory(db) }
+    val multiAccountViewModel: MultiAccountViewModel = viewModel(
+        factory = MultiAccountViewModel.Factory(accountDirectory)
+    )
+
+    /**
+     * 账号弹窗点「添加账号」：先清该平台的内嵌浏览器登录态（否则网页登录会自动登回旧账号），
+     * 再标记「这次登录落成新账号」，最后打开对应平台的登录页。
+     */
+    val onAddAccount: (String) -> Unit = { platform ->
+        multiAccountViewModel.prepareAddAccount(platform)
+        when (platform) {
+            DownloadPlatform.QUARK -> { viewModel.beginAddAccount(); showQuarkLogin = true }
+            DownloadPlatform.UC -> { ucViewModel.beginAddAccount(); showUCLogin = true }
+            DownloadPlatform.XUNLEI -> { xunleiViewModel.beginAddAccount(); showXunleiLogin = true }
+            DownloadPlatform.BAIDU -> { baiduViewModel.beginAddAccount(); showBaiduLogin = true }
+            DownloadPlatform.C139 -> { c139ViewModel.beginAddAccount(); showC139Login = true }
+            DownloadPlatform.PAN123 -> { pan123ViewModel.beginAddAccount(); showPan123Login = true }
+            DownloadPlatform.PAN115 -> { pan115ViewModel.beginAddAccount(); showPan115Login = true }
+            DownloadPlatform.GUANGYA -> { guangyaViewModel.beginAddAccount(); showGuangYaLogin = true }
+            DownloadPlatform.ILANZOU -> { ilanzouViewModel.beginAddAccount(); showILanzouLogin = true }
+            DownloadPlatform.LANZOU -> { lanzouViewModel.beginAddAccount(); showLanzouLogin = true }
+        }
+    }
     val quarkCloudViewModel: QuarkCloudViewModel = viewModel(
         factory = QuarkCloudViewModel.Factory(
             api,
@@ -602,7 +630,7 @@ fun MainScreen(
     if (showQuarkLogin) {
         QuarkLoginScreen(
             viewModel = viewModel,
-            onBack = { showQuarkLogin = false },
+            onBack = { viewModel.cancelAddAccount(); showQuarkLogin = false },
             onSaved = { showQuarkLogin = false }
         )
         return
@@ -612,7 +640,7 @@ fun MainScreen(
     if (showUCLogin) {
         UCLoginScreen(
             viewModel = ucViewModel,
-            onBack = { showUCLogin = false },
+            onBack = { ucViewModel.cancelAddAccount(); showUCLogin = false },
             onSaved = { showUCLogin = false }
         )
         return
@@ -635,7 +663,7 @@ fun MainScreen(
     if (showBaiduLogin) {
         BaiduLoginScreen(
             viewModel = baiduViewModel,
-            onBack = { showBaiduLogin = false },
+            onBack = { baiduViewModel.cancelAddAccount(); showBaiduLogin = false },
             onSaved = { showBaiduLogin = false }
         )
         return
@@ -645,7 +673,7 @@ fun MainScreen(
     if (showC139Login) {
         C139LoginScreen(
             viewModel = c139ViewModel,
-            onBack = { showC139Login = false },
+            onBack = { c139ViewModel.cancelAddAccount(); showC139Login = false },
             onSaved = { showC139Login = false }
         )
         return
@@ -655,7 +683,7 @@ fun MainScreen(
     if (showPan115Login) {
         Pan115LoginScreen(
             viewModel = pan115ViewModel,
-            onBack = { showPan115Login = false },
+            onBack = { pan115ViewModel.cancelAddAccount(); showPan115Login = false },
             onSaved = { showPan115Login = false }
         )
         return
@@ -850,6 +878,8 @@ fun MainScreen(
                             ilanzouCloudViewModel = ilanzouCloudViewModel,
                             lanzouCloudViewModel = lanzouCloudViewModel,
                             driveQuotaViewModel = driveQuotaViewModel,
+                            multiAccount = multiAccountViewModel,
+                            onAddAccount = onAddAccount,
                             onQuarkLogin = { showQuarkLogin = true },
                             onQuarkLogout = { viewModel.logout() },
                             onDownloadStarted = { currentTab = MainTab.Download },
@@ -1066,7 +1096,7 @@ fun MainScreen(
         PageOverlay(visible = showXunleiLogin) {
             XunleiLoginScreen(
                 viewModel = xunleiViewModel,
-                onBack = { showXunleiLogin = false },
+                onBack = { xunleiViewModel.cancelAddAccount(); showXunleiLogin = false },
                 onSaved = { showXunleiLogin = false },
                 onVerify = { url, deviceId ->
                     xunleiVerifyUrl = url
@@ -1107,7 +1137,7 @@ fun MainScreen(
         PageOverlay(visible = showPan123Login) {
             Pan123LoginScreen(
                 viewModel = pan123ViewModel,
-                onBack = { showPan123Login = false },
+                onBack = { pan123ViewModel.cancelAddAccount(); showPan123Login = false },
                 onSaved = { showPan123Login = false }
             )
         }
@@ -1115,7 +1145,7 @@ fun MainScreen(
         PageOverlay(visible = showGuangYaLogin) {
             GuangYaLoginScreen(
                 viewModel = guangyaViewModel,
-                onBack = { showGuangYaLogin = false },
+                onBack = { guangyaViewModel.cancelAddAccount(); showGuangYaLogin = false },
                 onSaved = { showGuangYaLogin = false }
             )
         }
@@ -1123,7 +1153,7 @@ fun MainScreen(
         PageOverlay(visible = showILanzouLogin) {
             ILanzouLoginScreen(
                 viewModel = ilanzouViewModel,
-                onBack = { showILanzouLogin = false },
+                onBack = { ilanzouViewModel.cancelAddAccount(); showILanzouLogin = false },
                 onSaved = { showILanzouLogin = false }
             )
         }
@@ -1131,7 +1161,7 @@ fun MainScreen(
         PageOverlay(visible = showLanzouLogin) {
             LanzouLoginScreen(
                 viewModel = lanzouViewModel,
-                onBack = { showLanzouLogin = false },
+                onBack = { lanzouViewModel.cancelAddAccount(); showLanzouLogin = false },
                 onSaved = { showLanzouLogin = false }
             )
         }

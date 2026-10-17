@@ -2,6 +2,8 @@ package com.yunx.app.data.repository
 
 import com.yunx.app.data.db.C139AccountDao
 import com.yunx.app.data.db.C139AccountEntity
+import com.yunx.app.data.db.resolveAccountSlot
+import com.yunx.app.data.download.DownloadPlatform
 import com.yunx.app.data.network.C139Constants
 import com.yunx.app.util.CookieCleaner
 import kotlinx.coroutines.Dispatchers
@@ -30,16 +32,19 @@ class C139AccountRepository(
      * 校验 139 Cookie 有效性（Os_SSo_Sid+RMKEY 或 authorization 任一成立）；
      * 有效则提取账号与 authorization 并落库，返回 true。
      */
-    suspend fun saveC139Account(cookie: String): Boolean {
+    suspend fun saveC139Account(cookie: String, newAccount: Boolean = false): Boolean {
         if (!C139Constants.isValidCookie(cookie)) return false
         val nickname = C139Constants.extractAccount(cookie) ?: "139用户"
         val authorization = C139Constants.extractAuthorization(cookie).orEmpty()
+        val slot = resolveAccountSlot(DownloadPlatform.C139, dao.getAccount(), newAccount)
         dao.upsert(
             C139AccountEntity(
-                id = "c139",
+                id = slot.id,
                 cookie = cookie,
                 nickname = nickname,
-                authorization = authorization
+                authorization = authorization,
+                isPrimary = slot.isPrimary,
+                remark = slot.remark
             )
         )
         return true

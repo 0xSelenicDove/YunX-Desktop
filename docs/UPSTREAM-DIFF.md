@@ -376,6 +376,31 @@
 | `28bfa37`(#154) 新增友情链接、`0f27e67`(#155) README 截图替换 | **不移植**：纯 README / 图片资源，桌面仓库的 README 独立维护 |
 | 登录页 `liveRegion` 语义、`isError` → `enabled`、密码可见性图标语义（#164） | **未移植**：纯无障碍语义改动（桌面端对读屏依赖低），本轮不引入 |
 
+### 9.13 本次对齐（上游 #178 / #179）
+
+本轮覆盖 `b4d8ad7`(#178) 与 `cad7718`(#179)，对齐点由 `bdafe9e` 推进到 **`cad7718`**。
+
+#### 已移植
+
+| 上游内容（提交） | 桌面实现与取舍 |
+| --- | --- |
+| 文件夹落盘修复（#178） | 尾斜杠语义（只给目录时名字用 fallback）、引擎任务预建目标目录、完成态路径保留相对子目录、批量下载失败统计；折叠状态 `rememberSaveable` 早已具备 |
+| 凭证加固（#179） | `decryptOrNull`（解密失败不再清整张账号表）、密钥只在「确实解不开」时更换、MachineGuid 读不到按暂时不可用、GitHub Token 只失效不删 |
+| 多账号基础能力（#179） | 10 张账号表新增 `isPrimary`/`remark`（DDL + 启动时逐表 ALTER 自动迁移，老数据零感知）；DAO/JDBC 改多行实现（同平台单主账号、删主后自动补位）；加密装饰器提供列表接口；`AccountDirectory` + `MultiAccountViewModel`；`resolveAccountSlot` 接入 10 个 Repository（日常重登覆盖主账号行、「添加账号」落新行）；10 个账号弹窗接入 `AccountListSection`（列表 / 设主账号 / 备注 / 退出单个 / 添加账号），网盘页接线完成 |
+| C1 多账号下载（#179，实验性） | 批量下载按文件轮换同一网盘的不同账号取链；仓库新增 `allCredentials` / `refreshIfPrimary`，夸克/UC 的 `cookieSink` 改为按本次请求所用 Cookie 回写对应账号行。**平台范围缩到夸克 / UC / 迅雷** —— 其余平台取链凭证由各自 ResolveRepository 的 provider 闭包绑定主账号，换账号需重接整条 provider |
+| C2 单文件多源分片（#179，实验性） | 新增 `DownloadSource`；`download_task.altSourcesJson`（加密落库 + 旧库迁移）；分片按 `offset / chunkSize % 源数` 轮流使用不同直链；分片规划 / 并发上限 / 合并逻辑一字未动，断点续传兼容。平台同 C1（夸克 / UC / 迅雷） |
+| 设置开关 | 并入桌面现有「实验性功能」页（不新建二级页）：两个开关 + 开启前风险确认；关闭 C1 时强制关闭 C2 |
+
+#### 跳过 / 桌面差异
+
+| 上游内容 | 处理 |
+| --- | --- |
+| 深链接 / 分享 / 选中文本（`activity-alias`、`singleTask`、`PROCESS_TEXT`，#178） | **不适用**：Android Intent 体系；桌面已有剪贴板识别 |
+| `LinkOpenTarget` / `LinkOpenScreen` / 13 项召唤开关（#178） | **不适用**：同上，无 Android 组件可开关 |
+| Android WebView 登录态清理（`CookieManager`/`WebStorage`，#179） | **桌面等价物**：`CookieCleaner.clearCookiesForDomains`（JCEF Cookie）——「添加账号」与「退出最后一个账号」时按平台域名清理 |
+| `MultiAccountDownloadScreen` 独立二级页 + `ExperimentalBadge`（#179） | **改为并入桌面「实验性功能」页**；未单独抽 `ExperimentalBadge`（桌面实验性条目已有文案标注） |
+| C1/C2 的百度 / 139 / 115 / 蓝奏覆盖 | **未做**：这些平台的取链凭证由 provider 闭包绑定主账号，重接成本较高；开关对它们无效（自动退回单账号 / 单源） |
+
 
 
 

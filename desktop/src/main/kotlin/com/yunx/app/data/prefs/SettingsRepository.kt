@@ -341,8 +341,44 @@ class SettingsRepository {
         }
 
     /**
+     * 多账号下载（**实验性**，代号 C1）：默认关。
+     *
+     * 开启后，同一个网盘登录了多个账号时，批量下载会把每个文件轮换交给不同账号去取直链，
+     * 绕开单账号的并发数 / 限速限制（每个文件仍只用一个账号下载）。
+     * ★ 只有「账号列表里不止一个账号」的平台才有实际效果；开启前设置页有二次风险确认。
+     */
+    var multiAccountDownload: Boolean
+        get() = prefs.getBoolean("multi_account_download", false)
+        set(value) {
+            prefs.putBoolean("multi_account_download", value)
+        }
+
+    /**
+     * 单文件多源分片（**实验性**，代号 C2）：默认关，**依赖 [multiAccountDownload]**。
+     *
+     * 开启后，同一个文件用多个账号各取一条直链，分片轮流交给不同直链下载（真正提速单个大文件）。
+     * 目前只覆盖夸克 / UC / 迅雷；其他平台即使开着也退回单源。
+     * ★ 关掉 C1 时必须一起关掉它（设置页与读取处都按「C1 关 ⇒ C2 无效」处理），
+     *   否则会出现「多账号下载关了、单文件还在多账号取链」的不一致状态。
+     */
+    var multiSourceDownload: Boolean
+        get() = prefs.getBoolean("multi_source_download", false)
+        set(value) {
+            prefs.putBoolean("multi_source_download", value)
+        }
+
+    /** C2 是否真正生效：开关开着且 C1 也开着（C2 依赖 C1，见 [multiSourceDownload]） */
+    fun multiSourceActive(): Boolean = multiAccountDownload && multiSourceDownload
+
+    /** 关闭 C1 时强制关掉 C2（C2 依赖 C1）：设置页切 C1 与读取端都用这一处口径 */
+    fun disableMultiSource() {
+        prefs.putBoolean("multi_source_download", false)
+    }
+
+    /**
      * 重置「实验性功能」页全部设置为默认值：
-     * HTTP/2 关闭、读缓冲 64KB、慢连接抢占开启（12KB/s、15s）、主页快捷方式关闭。
+     * HTTP/2 关闭、读缓冲 64KB、慢连接抢占开启（12KB/s、15s）、主页快捷方式关闭、
+     * 多账号下载 / 单文件多源分片关闭。
      * 运行时同步（HttpClients.setHttp2Enabled / DownloadTuning.applyFrom）由调用方负责。
      */
     fun resetExperimentalFeatures() {
@@ -352,6 +388,8 @@ class SettingsRepository {
         slowPreemptMinBps = DEFAULT_SLOW_PREEMPT_MIN_BPS
         slowPreemptMinAgeMs = DEFAULT_SLOW_PREEMPT_MIN_AGE_MS
         homeShortcutEnabled = false
+        multiAccountDownload = false
+        multiSourceDownload = false
     }
 
     /** 归一化代理模式：非法值一律回退为直连 */

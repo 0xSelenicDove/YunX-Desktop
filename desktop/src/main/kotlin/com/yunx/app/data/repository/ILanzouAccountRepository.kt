@@ -2,6 +2,8 @@ package com.yunx.app.data.repository
 
 import com.yunx.app.data.db.ILanzouAccountDao
 import com.yunx.app.data.db.ILanzouAccountEntity
+import com.yunx.app.data.db.resolveAccountSlot
+import com.yunx.app.data.download.DownloadPlatform
 import com.yunx.app.data.network.ILanzouApi
 import kotlinx.coroutines.flow.Flow
 
@@ -20,19 +22,26 @@ class ILanzouAccountRepository(
     suspend fun getAccount(): ILanzouAccountEntity? = dao.getAccount()
 
     /** 账号密码登录：取/复用设备标识 → 换 appToken → 拉账号信息 → 落库。 */
-    suspend fun login(account: String, password: String): Result<ILanzouAccountEntity> = runCatching {
+    suspend fun login(
+        account: String,
+        password: String,
+        newAccount: Boolean = false
+    ): Result<ILanzouAccountEntity> = runCatching {
         val existing = dao.getAccount()
         val uuid = existing?.uuid?.takeIf { isValidUuid(it) } ?: api.getUuid()
         val token = api.login(account, password, uuid)
         val info = api.fetchAccountInfo(token, uuid)
+        val slot = resolveAccountSlot(DownloadPlatform.ILANZOU, existing, newAccount)
         val entity = ILanzouAccountEntity(
-            id = "ilanzou",
+            id = slot.id,
             appToken = token,
             uuid = uuid,
             account = account.trim(),
             password = password,
             userId = info?.userId.orEmpty(),
-            nickname = info?.nickname.orEmpty().ifBlank { account.trim() }
+            nickname = info?.nickname.orEmpty().ifBlank { account.trim() },
+            isPrimary = slot.isPrimary,
+            remark = slot.remark
         )
         dao.upsert(entity)
         entity

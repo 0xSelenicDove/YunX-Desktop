@@ -47,6 +47,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
+import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.coroutines.coroutineContext
 import kotlin.math.ceil
@@ -495,6 +496,12 @@ class DownloadManager(
     /** 任务请求头（Cookie/UA），暂停后恢复仍需使用 */
     private val taskHeaders = ConcurrentHashMap<Long, Map<String, String>>()
 
+    /**
+     * 单文件多源分片（实验性 C2）的备选源：同一文件其他账号的直链 + 各自请求头。
+     * 与 [taskHeaders] 同寿命（入队写入、任务终态清理），重启后从 download_task 里恢复。
+     */
+    private val taskAltSources = ConcurrentHashMap<Long, List<DownloadSource>>()
+
     /** 已知文件大小（API 返回，避免探测失败）；-1 表示未知 */
     private val taskSizes = ConcurrentHashMap<Long, Long>()
 
@@ -617,6 +624,11 @@ class DownloadManager(
         shareUrl: String = "",
         /** 镜像主 URL 不可达时的回退直连（默认空=不回退）；仅 GitHub 等镜像下载传入 */
         fallbackUrl: String = "",
+        /**
+         * 单文件多源分片（实验性 C2）的备选源（同一文件其他账号的直链 + 各自请求头）。
+         * 空 = 单源，行为与未开启该功能时完全一致；只对内置分片下载器生效，Gopeed 引擎任务忽略它。
+         */
+        altSources: List<DownloadSource> = emptyList(),
         /** 下载成功完成后的清理回调（如删除网盘临时转存文件）；失败/取消不触发。
          * 注意：必须是最后一个参数（调用点有大量尾随 lambda 用法，放它之后会编译失败）。 */
         onComplete: suspend () -> Unit = {}
@@ -643,6 +655,7 @@ class DownloadManager(
                         url = url,
                         fileName = safeName,
                         requestHeadersJson = encodeHeaders(headers),
+                        altSourcesJson = encodeAltSources(altSources),
                         platform = taskPlatform,
                         shareUrl = effectiveShareUrl
                     )
@@ -670,6 +683,8 @@ class DownloadManager(
         )
         // 保存请求头（Cookie/UA），暂停后恢复仍需携带
         if (headers.isNotEmpty()) taskHeaders[id] = headers
+        // 备选源（多源分片）同样留在内存里，恢复/续传时不必回查数据库
+        if (altSources.isNotEmpty()) taskAltSources[id] = altSources
         if (size > 0) taskSizes[id] = size
         if (fallbackUrl.isNotBlank()) taskFallbackUrls[id] = fallbackUrl
         taskCallbacks[id] = onComplete
@@ -682,6 +697,7 @@ class DownloadManager(
             taskCallbacks.remove(id)
             // 不会有下载协程来消费这几份内存数据了，直接清掉
             taskHeaders.remove(id)
+            taskAltSources.remove(id)
             taskSizes.remove(id)
             taskFallbackUrls.remove(id)
             dao.updateStatus(id, DownloadTaskEntity.STATUS_FAILED)
@@ -876,6 +892,7 @@ class DownloadManager(
         downloader.cancelCalls(id)
         _stats.update { it - id }
         taskHeaders.remove(id)
+        taskAltSources.remove(id)
         taskFallbackUrls.remove(id)
         // 删除任务同样触发清理回调（如删除网盘临时转存文件）：
         // 用户放弃下载时云盘里已转存的临时文件也应一并清理
@@ -988,6 +1005,10 @@ class DownloadManager(
                 GopeedEngine.start(base)
                 // 在建首个任务前把「最大同时下载数」/不做种推给引擎，让引擎从一开始就按上限排队
                 syncEngineRuntimeConfig()
+                // 引擎不会替我们建目录：目录不存在会把任务建在一个不存在的路径上（随后落盘失败）
+                if (!destDir.exists() && !destDir.mkdirs()) {
+                    throw java.io.IOException("无法创建目录：$destDir")
+                }
                 GopeedEngine.createTask(
                     url = url,
                     saveDir = destDir.absolutePath,
@@ -1178,20 +1199,35 @@ class DownloadManager(
             withContext(Dispatchers.IO) { GopeedEngine.taskDetail(task.engineTaskId) }
         }.onFailure { Log.w(TAG, "读取引擎任务详情失败，用本地文件名兜底：id=${task.id} ${it.message}") }.getOrNull()
         val realName = detail?.name?.takeIf { it.isNotBlank() } ?: task.fileName
-        val savedPath = File(engineBaseDir(), realName).absolutePath
+        // ★ 非磁力任务的实际落盘位置 = 引擎目录 + 相对子目录 + 文件名（子目录是作为 saveDir 下发的，
+        //   见 startViaEngine）。只用「引擎目录 + 引擎报的名字」拼会丢掉子目录 ⇒ 记录指向一个
+        //   不存在的文件，之后「打开 / 删除本地文件」都会找错地方。磁力例外：落盘结构由种子决定。
+        val isMagnetTask = task.platform == DownloadPlatform.MAGNET
+        val savedPath = if (isMagnetTask) {
+            File(engineBaseDir(), realName).absolutePath
+        } else {
+            val safe = DownloadPathPolicy.sanitize(task.fileName, "download_${task.id}")
+            if (safe != null) {
+                File(File(engineBaseDir(), safe.relativeDirectory), safe.fileName).absolutePath
+            } else {
+                File(engineBaseDir(), realName).absolutePath
+            }
+        }
         completeWithAvg(task.id, savedPath, total)
         DiagnosticLog.log(
             DiagnosticLog.DOWNLOAD, "engine_task_complete", taskId = task.id, status = "completed",
             size = total,
             summary = "path=$savedPath 文件数=${detail?.fileCount ?: -1} 目录=${detail?.folder ?: false}"
         )
-        if (realName != task.fileName) {
-            // 磁力：把界面上占位的显示名换成真正的种子名（失败只记日志，不影响已完成状态）
+        if (isMagnetTask && realName != task.fileName) {
+            // 磁力：把界面上占位的显示名换成真正的种子名（失败只记日志，不影响已完成状态）。
+            // ★ 非磁力不要回写：task.fileName 里带着相对目录，用引擎报的纯文件名覆盖会把目录丢掉。
             runCatching { dao.updateFileName(task.id, realName) }
                 .onFailure { Log.w(TAG, "回写种子名失败：id=${task.id} ${it.message}") }
         }
         taskCallbacks.remove(task.id)?.let { runCatching { it() } }
         taskHeaders.remove(task.id)
+        taskAltSources.remove(task.id)
         taskSizes.remove(task.id)
         taskFallbackUrls.remove(task.id)
         finishEngineTask(task.id)
@@ -1207,6 +1243,56 @@ class DownloadManager(
     private fun encodeHeaders(headers: Map<String, String>): String {
         val json = JSONObject().apply { headers.forEach { (name, value) -> put(name, value) } }.toString()
         return credentialCipher.encrypt(json, "download.requestHeaders")
+    }
+
+    /**
+     * 备选源（实验性 C2）落库：数组 JSON 整体按 `download.altSources` 加密 ——
+     * 里面是各账号的直链与 Cookie，敏感级别与请求头一致，必须加密。
+     * 空列表存空串，与「从未开启该功能」完全同形。
+     */
+    private fun encodeAltSources(sources: List<DownloadSource>): String {
+        if (sources.isEmpty()) return ""
+        val array = JSONArray()
+        sources.forEach { source ->
+            array.put(
+                JSONObject().apply {
+                    put("url", source.url)
+                    put(
+                        "headers",
+                        JSONObject().apply { source.headers.forEach { (name, value) -> put(name, value) } }
+                    )
+                }
+            )
+        }
+        return credentialCipher.encrypt(array.toString(), "download.altSources")
+    }
+
+    /**
+     * 取回备选源。解析失败（密文损坏 / 换了密钥）时按**单源**处理而不是清任务：
+     * 多源只是提速手段，丢了它照样能把文件下完，没必要因此让用户丢进度。
+     */
+    private suspend fun loadPersistedAltSources(id: Long): List<DownloadSource> {
+        val stored = dao.get(id)?.altSourcesJson.orEmpty()
+        if (stored.isBlank()) return emptyList()
+        return runCatching {
+            val text = credentialCipher.decrypt(stored, "download.altSources")
+            val array = JSONArray(text)
+            buildList {
+                for (i in 0 until array.length()) {
+                    val obj = array.getJSONObject(i)
+                    val url = obj.optString("url")
+                    if (url.isBlank()) continue
+                    val headersJson = obj.optJSONObject("headers")
+                    val headers = buildMap {
+                        headersJson?.keys()?.forEach { name -> put(name, headersJson.getString(name)) }
+                    }
+                    add(DownloadSource(url, headers))
+                }
+            }
+        }.getOrElse {
+            Log.w(TAG, "loadPersistedAltSources: id=$id 解析失败，本次按单源下载")
+            emptyList()
+        }
     }
 
     private suspend fun loadPersistedHeaders(id: Long): Map<String, String> {
@@ -1385,6 +1471,25 @@ class DownloadManager(
             "size=$chunkSize threads=$threadCount effectiveWorkers=$effectiveWorkers " +
             "actualWorkers=$actualWorkers inflightCap=$MAX_INFLIGHT_CHUNKS isXunlei=$isXunlei")
 
+        // ---------- 单文件多源分片（实验性 C2）----------
+        // 同一个文件的多条直链分属不同账号，分片按序号轮流交给不同源（每条直链带着它自己账号的请求头）。
+        // ★ 分片规划一个字节都不动（chunkCount / total / plan.txt 全不变）⇒ 与单源共用同一套断点续传：
+        //   开关该功能只影响「哪条直链下哪一片」，分片区间与文件名不变，已有断点不会失效。
+        // 未开启 / 平台不支持 / 只有一个账号时 sources 只有主源一项，行为与开启前完全一致。
+        val altSources = taskAltSources[id] ?: loadPersistedAltSources(id).also {
+            if (it.isNotEmpty()) taskAltSources[id] = it
+        }
+        val sources = buildList {
+            add(DownloadSource(task.url, headers))
+            altSources.forEach { source -> if (source.url.isNotBlank()) add(source) }
+        }
+        /** 某个字节偏移所在分片用哪个源：offset / chunkSize 就是分片序号，按序号轮转 */
+        fun sourceOf(offset: Long): DownloadSource =
+            if (sources.size == 1) sources[0] else sources[((offset / chunkSize) % sources.size).toInt()]
+        if (sources.size > 1) {
+            DownloadDebugLog.record(id, "多源分片", "源数=${sources.size}（含主源）分片按序号轮流使用")
+        }
+
         // 注册实时统计：线程数 = 实际并发（受安全上限与内存预算约束）
         _stats.update { it + (id to DownloadStats(0L, -1L, actualWorkers)) }
 
@@ -1470,10 +1575,12 @@ class DownloadManager(
                             // 分片级校验：本片（含续传前缀）的摘要，写完即登记，合并时比对
                             val partFile = File(chunkDir, "part_$i")
                             val partDigest = newPartDigest(partFile)
+                            // 多源分片：这一片交给哪个账号的直链（单源时恒为主源）
+                            val src = sourceOf(start)
                             val res = try {
                                 downloader.downloadChunk(
-                                    taskId = id, url = task.url, start = start, end = end,
-                                    partFile = partFile, headers = headers,
+                                    taskId = id, url = src.url, start = start, end = end,
+                                    partFile = partFile, headers = src.headers,
                                     preempt = diag.preempt,
                                     contentDigest = partDigest
                                 ) { bytes ->
@@ -1542,9 +1649,11 @@ class DownloadManager(
                         val res = try {
                             inflightLimiter.withPermit {
                                 if (fallback.get()) return@withPermit ChunkResult.FAILED
+                                // 多源分片：弹性块按它在文件里的偏移选源
+                                val src = sourceOf(s)
                                 downloader.downloadChunk(
-                                    taskId = id, url = task.url, start = s, end = e,
-                                    partFile = segFile, headers = headers,
+                                    taskId = id, url = src.url, start = s, end = e,
+                                    partFile = segFile, headers = src.headers,
                                     preempt = diag.preempt,
                                     contentDigest = segDigest
                                 ) { bytes ->
@@ -1677,9 +1786,11 @@ class DownloadManager(
                                 // ★ 重试同样走全进程在飞信号量：少这一处会让「主池 + 弹性区 + 重试」
                                 //   三路并发叠加，正是 OOM 的成因之一
                                 inflightLimiter.withPermit {
+                                    // 重试区间按起始偏移选源：与首次下载落在同一个源上
+                                    val src = sourceOf(m.start)
                                     downloader.downloadChunk(
-                                        taskId = id, url = task.url, start = m.start, end = m.end,
-                                        partFile = m.file, headers = headers,
+                                        taskId = id, url = src.url, start = m.start, end = m.end,
+                                        partFile = m.file, headers = src.headers,
                                         preempt = diag.preempt,
                                         contentDigest = retryDigest
                                     ) { bytes ->
