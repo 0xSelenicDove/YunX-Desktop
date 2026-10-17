@@ -24,6 +24,10 @@ class Pan115AccountRepository(
 
     suspend fun getAccount(): Pan115AccountEntity? = dao.getAccount()
 
+    /** 该平台全部账号可用的凭证（主账号在前）：多账号下载（实验性 C1）轮换取链用 */
+    suspend fun allCredentials(): List<String> =
+        dao.getAccounts().map { it.cookie }.filter { it.isNotBlank() }
+
     /**
      * 保存网页登录 Cookie：先用 `/user/info` 确认登录态有效并取昵称（脱敏手机号），成功才落库。
      * @param cookie 内嵌浏览器登录 115.com 后取到的完整 Cookie

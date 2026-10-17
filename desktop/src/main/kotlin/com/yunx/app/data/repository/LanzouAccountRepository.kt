@@ -20,6 +20,10 @@ class LanzouAccountRepository(
 
     suspend fun getAccount(): LanzouAccountEntity? = dao.getAccount()
 
+    /** 该平台全部账号可用的凭证（主账号在前）：多账号下载（实验性 C1）轮换取链用 */
+    suspend fun allCredentials(): List<String> =
+        dao.getAccounts().map { it.cookie }.filter { it.isNotBlank() }
+
     /**
      * 原生账号密码登录：调用官网登录接口（accounts.woozooo.com，含人机校验）换取 Cookie，
      * 再用 mydisk.php 校验 uid/vei，成功则落库。

@@ -23,6 +23,10 @@ class Pan123AccountRepository(
 
     suspend fun getAccount(): Pan123AccountEntity? = dao.getAccount()
 
+    /** 该平台全部账号可用的凭证（主账号在前）：多账号下载（实验性 C1）轮换取链用 */
+    suspend fun allCredentials(): List<String> =
+        dao.getAccounts().map { it.accessToken }.filter { it.isNotBlank() }
+
     /**
      * 账号密码登录（POST user.123pan.cn/api/user/sign_in，无需签名）→ token 落库。
      *

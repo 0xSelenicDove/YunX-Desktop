@@ -40,6 +40,10 @@ class GuangYaAccountRepository(
 
     suspend fun getAccount(): GuangYaAccountEntity? = dao.getAccount().also { cachedDeviceId = it?.deviceId }
 
+    /** 该平台全部账号可用的凭证（主账号在前）：多账号下载（实验性 C1）轮换取链用 */
+    suspend fun allCredentials(): List<String> =
+        dao.getAccounts().map { it.accessToken }.filter { it.isNotBlank() }
+
     /** 账号密码登录并落库；返回最终写入的实体。 */
     suspend fun login(
         account: String,

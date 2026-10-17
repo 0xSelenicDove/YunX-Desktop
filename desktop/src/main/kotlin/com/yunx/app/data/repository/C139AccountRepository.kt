@@ -22,6 +22,10 @@ class C139AccountRepository(
 
     suspend fun getAccount(): C139AccountEntity? = dao.getAccount()
 
+    /** 该平台全部账号可用的凭证（主账号在前）：多账号下载（实验性 C1）轮换取链用 */
+    suspend fun allCredentials(): List<String> =
+        dao.getAccounts().map { it.cookie }.filter { it.isNotBlank() }
+
     /** 退出登录：清理 JCEF Cookie + 清除本地记录 */
     suspend fun logoutC139() {
         CookieCleaner.clearCookiesForDomains(listOf("yun.139.com", "139.com"))

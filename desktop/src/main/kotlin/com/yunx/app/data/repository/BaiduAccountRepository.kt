@@ -23,6 +23,10 @@ class BaiduAccountRepository(
 
     suspend fun getAccount(): BaiduAccountEntity? = dao.getAccount()
 
+    /** 该平台全部账号可用的凭证（主账号在前）：多账号下载（实验性 C1）轮换取链用 */
+    suspend fun allCredentials(): List<String> =
+        dao.getAccounts().map { it.cookie }.filter { it.isNotBlank() }
+
     /** 退出登录：清理 JCEF Cookie + 清除本地记录 + 清空 bdstoken 缓存 */
     suspend fun logoutBaidu() {
         CookieCleaner.clearCookiesForDomains(listOf("pan.baidu.com", "yun.baidu.com", "baidu.com"))
