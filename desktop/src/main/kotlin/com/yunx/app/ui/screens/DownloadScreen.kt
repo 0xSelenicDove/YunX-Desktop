@@ -78,10 +78,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.yunx.app.data.db.DownloadTaskEntity
-import com.yunx.app.data.download.DownloadSaver
 import com.yunx.app.data.download.DownloadStats
 import com.yunx.app.data.download.MagnetLink
 import com.yunx.app.ui.SnackbarController
+import com.yunx.app.ui.components.DownloadDirRow
 import com.yunx.app.ui.components.FadeAlertDialog
 import com.yunx.app.ui.theme.ThemeController
 import com.yunx.app.ui.viewmodel.DownloadViewModel
@@ -1026,16 +1026,8 @@ private fun AddDownloadDialog(
         title = { Text("添加下载任务") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    // 自定义保存目录在「设置 → 储存目录」里改，这里如实显示当前生效的位置
-                    text = "下载文件将保存到 ${
-                        DownloadSaver.resolveSaveDir(
-                            com.yunx.app.data.prefs.SettingsRepository().downloadDirUri
-                        ).absolutePath
-                    } 目录",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                // 保存目录可就地更改（与「设置 → 储存目录 → 下载保存目录」是同一项配置）
+                DownloadDirRow()
                 OutlinedTextField(
                     value = url,
                     onValueChange = {

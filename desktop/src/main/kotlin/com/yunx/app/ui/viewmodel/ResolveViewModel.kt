@@ -704,8 +704,23 @@ class ResolveViewModel(
             currentPlatform == SharePlatform.ILANZOU ||
             currentPlatform == SharePlatform.LANZOU
 
+    /**
+     * 「把原文回填到解析输入框」的请求：解析失败时写入，解析页消费后置空。
+     *
+     * 场景：剪贴板右下角弹窗点「打开」时，链接若**没带提取码**就会解析失败 ——
+     * 回填后用户只需再补一个提取码（不必把链接重新粘贴一次）。
+     */
+    var prefillRequest by mutableStateOf<String?>(null)
+        private set
+
+    fun consumePrefill(): String? = prefillRequest.also { prefillRequest = null }
+
+    /** 最近一次 startResolve 的原文（口令转换之前），失败时原样回填 */
+    private var lastResolveInput: String = ""
+
     /** 开始解析：链接 → token →（密码）→ 根目录列表 */
     fun startResolve(link: String, pwd: String?) {
+        lastResolveInput = link
         currentLink = link
         currentPwd = pwd
         // 写入当前分享链接，供下载入队时兜底填充 task.shareUrl（右键菜单「复制分享链接」用）
@@ -741,6 +756,7 @@ class ResolveViewModel(
             val parsed = ShareLinkParser.parse(effectiveLink)
             if (parsed == null) {
                 // 两个口令服务都给不出结果时，用更靠后那次（星海）的原因——它对夸克/UC 口令最准
+                prefillRequest = lastResolveInput
                 uiState = ResolveUiState.Error(commandError ?: "无法识别分享链接")
                 return@launch
             }
@@ -764,6 +780,8 @@ class ResolveViewModel(
                 }
                 .onFailure { e ->
                     val msg = e.message ?: "解析失败"
+                    // 失败（最常见是「链接不带提取码」）→ 把原文回填输入框，用户补个提取码即可重试
+                    prefillRequest = lastResolveInput
                     // 游客模式失败时补一句可执行的引导，而不是只抛服务端原文
                     uiState = ResolveUiState.Error(
                         if (isGuest) "$msg（当前未登录，可到「网盘」页登录${platformName()}后重试）" else msg
@@ -1853,6 +1871,8 @@ class ResolveViewModel(
                 uiState = ResolveUiState.Detail(s, files)
             }
             .onFailure { e ->
+                // 同 createSession 失败：回填原文，便于用户补提取码后重试
+                prefillRequest = lastResolveInput
                 uiState = ResolveUiState.Error(e.message ?: "获取文件列表失败")
             }
     }

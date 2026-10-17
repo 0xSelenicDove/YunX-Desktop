@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.yunx.app.data.network.model.DownloadLink
 import com.yunx.app.ui.SnackbarController
+import com.yunx.app.ui.components.DownloadDirRow
 import com.yunx.app.ui.components.FadeAlertDialog
 import com.yunx.app.util.DesktopActions
 
@@ -92,10 +93,12 @@ fun DownloadLinkDialog(
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "点击「开始下载」将分片多线程下载并保存到 Download 目录",
+                    text = "点击「开始下载」将分片多线程下载并保存到下面的目录",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                Spacer(modifier = Modifier.height(6.dp))
+                DownloadDirRow()
             }
         },
         confirmButton = {

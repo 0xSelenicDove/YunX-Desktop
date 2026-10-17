@@ -89,6 +89,7 @@ import com.yunx.app.data.db.DownloadTaskEntity
 import com.yunx.app.data.prefs.SettingsRepository
 import com.yunx.app.ui.components.CloseChoice
 import com.yunx.app.ui.components.CloseConfirmDialog
+import com.yunx.app.util.DesktopActions
 import com.yunx.app.util.TrayManager
 import com.yunx.app.data.repository.BaiduAccountRepository
 import com.yunx.app.data.repository.BaiduResolveRepository
@@ -1365,15 +1366,14 @@ fun MainScreen(
                 kotlinx.coroutines.delay(200)
                 ClipboardLinkController.consumeOpen()?.let { d ->
                     currentTab = MainTab.Resolve
+                    // 链接带提取码才解析得动；没带时解析会失败，失败后 ViewModel 会把原文回填到解析输入框，
+                    // 用户只要再补一个提取码即可重试（不必重新粘贴链接）—— 见 ResolveViewModel.prefillRequest
                     resolveViewModel.startResolve(d.text, d.parsed.pwd)
-                    // Windows 上 toFront() 单独调用不一定能夺取焦点，用 alwaysOnTop 瞬时切换确保置顶
-                    ClipboardLinkController.mainWindow?.let { w ->
-                        val wasOnTop = w.isAlwaysOnTop
-                        w.isAlwaysOnTop = true
-                        w.toFront()
-                        w.requestFocus()
-                        w.isAlwaysOnTop = wasOnTop
-                    }
+                    // 置前：先「还原」（窗口可能被最小化到任务栏，此时 toFront() 对它无效）再置顶置前
+                    DesktopActions.bringWindowToFront(ClipboardLinkController.mainWindow)
+                    // 弹窗是独立顶层窗口，此刻正在销毁、可能把前台还回去 → 稍后再补一次置前
+                    kotlinx.coroutines.delay(180)
+                    DesktopActions.bringWindowToFront(ClipboardLinkController.mainWindow)
                 }
             }
         }
