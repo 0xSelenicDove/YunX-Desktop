@@ -34,6 +34,7 @@ import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.CreateNewFolder
 import androidx.compose.material.icons.outlined.DriveFileMove
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.AlertDialog
@@ -74,6 +75,7 @@ import com.yunx.app.data.prefs.SettingsRepository
 import com.yunx.app.ui.items.MultiSelectAction
 import com.yunx.app.ui.items.MultiSelectBar
 import com.yunx.app.ui.components.ScrollToTopButton
+import com.yunx.app.ui.components.rememberDownloadDirPicker
 import com.yunx.app.ui.resolve.DownloadLinkDialog
 import com.yunx.app.ui.resolve.BackToParentItem
 import com.yunx.app.ui.resolve.CrumbBar
@@ -121,11 +123,20 @@ fun BaiduCloudScreen(
     var limitHintDismissed by remember { mutableStateOf(settingsRepo.baiduLimitHintDismissed) }
     var showBaiduLimitDialog by remember { mutableStateOf(false) }
     var pendingBaiduDownload by remember { mutableStateOf<String?>(null) } // "single" / "batch"
+    var pendingBaiduSaveDir by remember { mutableStateOf("") }
+    // 「下载到…」目录选择器
+    val pickDownloadDir = rememberDownloadDirPicker()
 
     /** 判断是否需要弹限速提示；需要则记录待执行动作并弹窗，否则直接执行 */
-    fun maybeShowBaiduLimit(files: List<ShareFile>, action: String, onProceed: () -> Unit) {
+    fun maybeShowBaiduLimit(
+        files: List<ShareFile>,
+        action: String,
+        saveDir: String = "",
+        onProceed: () -> Unit
+    ) {
         if (!limitHintDismissed && files.any { it.fsize > BAIDU_LIMIT_BYTES }) {
             pendingBaiduDownload = action
+            pendingBaiduSaveDir = saveDir
             showBaiduLimitDialog = true
         } else {
             onProceed()
@@ -151,7 +162,8 @@ fun BaiduCloudScreen(
         DownloadLinkDialog(
             link = link,
             onDownload = { viewModel.startDownload() },
-            onDismiss = { viewModel.dismissDownloadDialog() }
+            onDismiss = { viewModel.dismissDownloadDialog() },
+            saveDir = viewModel.pendingSaveDir.takeIf { it.isNotBlank() }
         )
     }
 
@@ -344,6 +356,13 @@ fun BaiduCloudScreen(
                                 MultiSelectAction("下载", Icons.Outlined.Download, MaterialTheme.colorScheme.primary) {
                                     maybeShowBaiduLimit(viewModel.selected, "batch") { viewModel.downloadSelected() }
                                 },
+                                MultiSelectAction("下载到…", Icons.Outlined.FolderOpen, MaterialTheme.colorScheme.primary) {
+                                    pickDownloadDir { dir ->
+                                        maybeShowBaiduLimit(viewModel.selected, "batch", saveDir = dir) {
+                                            viewModel.downloadSelected(dir)
+                                        }
+                                    }
+                                },
                                 MultiSelectAction("分享", Icons.Outlined.Share, MaterialTheme.colorScheme.primary) {
                                     showShare = true
                                 },
@@ -374,9 +393,26 @@ fun BaiduCloudScreen(
                     maybeShowBaiduLimit(listOf(f), "single") { viewModel.downloadFile() }
                 }
             },
+            onDownloadTo = {
+                pickDownloadDir { dir ->
+                    val f = viewModel.actionFile
+                    if (f != null) {
+                        showActionSheet = false
+                        maybeShowBaiduLimit(listOf(f), "single", saveDir = dir) {
+                            viewModel.downloadFileTo(dir)
+                        }
+                    }
+                }
+            },
             onDownloadFolder = {
                 showActionSheet = false
                 viewModel.downloadFolder()
+            },
+            onDownloadFolderTo = {
+                pickDownloadDir { dir ->
+                    showActionSheet = false
+                    viewModel.downloadFolder(dir)
+                }
             },
             onRename = {
                 showActionSheet = false
@@ -514,10 +550,19 @@ fun BaiduCloudScreen(
                         settingsRepo.baiduLimitHintDismissed = neverShow
                         limitHintDismissed = neverShow
                         when (pendingBaiduDownload) {
-                            "single" -> viewModel.downloadFile()
-                            "batch" -> viewModel.downloadSelected()
+                            "single" -> if (pendingBaiduSaveDir.isNotBlank()) {
+                                viewModel.downloadFileTo(pendingBaiduSaveDir)
+                            } else {
+                                viewModel.downloadFile()
+                            }
+                            "batch" -> if (pendingBaiduSaveDir.isNotBlank()) {
+                                viewModel.downloadSelected(pendingBaiduSaveDir)
+                            } else {
+                                viewModel.downloadSelected()
+                            }
                         }
                         pendingBaiduDownload = null
+                        pendingBaiduSaveDir = ""
                     }
                 ) { Text("继续下载") }
             },
@@ -535,7 +580,9 @@ private fun BaiduActionSheet(
     file: ShareFile,
     viewModel: BaiduCloudViewModel,
     onDownload: () -> Unit,
+    onDownloadTo: () -> Unit,
     onDownloadFolder: (() -> Unit)? = null,
+    onDownloadFolderTo: (() -> Unit)? = null,
     onRename: () -> Unit,
     onMove: () -> Unit,
     onShare: () -> Unit,
@@ -582,8 +629,14 @@ private fun BaiduActionSheet(
             Spacer(modifier = Modifier.height(8.dp))
             if (!file.isdir) {
                 BaiduActionItem(Icons.Outlined.Download, "下载", "使用内置下载功能保存到本机", MaterialTheme.colorScheme.primary, onDownload)
-            } else if (onDownloadFolder != null) {
-                BaiduActionItem(Icons.Outlined.Download, "下载文件夹", "递归下载整个文件夹，保持目录结构", MaterialTheme.colorScheme.primary, onDownloadFolder)
+                BaiduActionItem(Icons.Outlined.FolderOpen, "下载到…", "选择本次保存的文件夹（不改全局设置）", MaterialTheme.colorScheme.primary, onDownloadTo)
+            } else {
+                if (onDownloadFolder != null) {
+                    BaiduActionItem(Icons.Outlined.Download, "下载文件夹", "递归下载整个文件夹，保持目录结构", MaterialTheme.colorScheme.primary, onDownloadFolder)
+                }
+                if (onDownloadFolderTo != null) {
+                    BaiduActionItem(Icons.Outlined.FolderOpen, "下载文件夹到…", "选择本次保存的文件夹（不改全局设置）", MaterialTheme.colorScheme.primary, onDownloadFolderTo)
+                }
             }
             BaiduActionItem(Icons.Outlined.Share, "分享", "生成分享链接（带提取码）", MaterialTheme.colorScheme.primary, onShare)
             BaiduActionItem(Icons.Outlined.DriveFileMove, "移动到", "移动到网盘的其他目录", MaterialTheme.colorScheme.primary, onMove)

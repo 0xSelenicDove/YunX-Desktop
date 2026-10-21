@@ -106,6 +106,23 @@ class AppDatabase private constructor(private val conn: Connection) {
                             it.execute("ALTER TABLE download_task ADD COLUMN altSourcesJson TEXT NOT NULL DEFAULT ''")
                         }
                     }
+                    // 迁移：旧库缺少 saveDir 列时补上（单次下载的保存目录覆盖；空串=跟随全局设置）
+                    runCatching {
+                        conn.createStatement().use {
+                            it.execute("ALTER TABLE download_task ADD COLUMN saveDir TEXT NOT NULL DEFAULT ''")
+                        }
+                    }
+                    // 迁移：实验性直写临时文件路径 / 模式
+                    runCatching {
+                        conn.createStatement().use {
+                            it.execute("ALTER TABLE download_task ADD COLUMN directPart TEXT NOT NULL DEFAULT ''")
+                        }
+                    }
+                    runCatching {
+                        conn.createStatement().use {
+                            it.execute("ALTER TABLE download_task ADD COLUMN directMode INTEGER NOT NULL DEFAULT 0")
+                        }
+                    }
                     // 迁移：旧库缺少 authType 列时补上（迅雷登录方式；空串=App 通道，webToken=网页登录）
                     runCatching {
                         conn.createStatement().use {
@@ -206,7 +223,7 @@ class AppDatabase private constructor(private val conn: Connection) {
             "CREATE TABLE IF NOT EXISTS guangya_account (id TEXT PRIMARY KEY NOT NULL, accessToken TEXT NOT NULL, refreshToken TEXT NOT NULL, deviceId TEXT NOT NULL, deviceSign TEXT NOT NULL, account TEXT NOT NULL, nickname TEXT NOT NULL, updatedAt INTEGER NOT NULL, isPrimary INTEGER NOT NULL DEFAULT 1, remark TEXT NOT NULL DEFAULT '')",
             "CREATE TABLE IF NOT EXISTS ilanzou_account (id TEXT PRIMARY KEY NOT NULL, appToken TEXT NOT NULL, uuid TEXT NOT NULL, account TEXT NOT NULL, password TEXT NOT NULL, userId TEXT NOT NULL, nickname TEXT NOT NULL, updatedAt INTEGER NOT NULL, isPrimary INTEGER NOT NULL DEFAULT 1, remark TEXT NOT NULL DEFAULT '')",
             "CREATE TABLE IF NOT EXISTS lanzou_account (id TEXT PRIMARY KEY NOT NULL, cookie TEXT NOT NULL, nickname TEXT NOT NULL, updatedAt INTEGER NOT NULL, isPrimary INTEGER NOT NULL DEFAULT 1, remark TEXT NOT NULL DEFAULT '')",
-            "CREATE TABLE IF NOT EXISTS download_task (id INTEGER PRIMARY KEY AUTOINCREMENT, url TEXT NOT NULL, fileName TEXT NOT NULL, totalSize INTEGER NOT NULL, downloadedSize INTEGER NOT NULL, status INTEGER NOT NULL, errorMsg TEXT NOT NULL, savePath TEXT NOT NULL, requestHeadersJson TEXT NOT NULL DEFAULT '{}', chunkCount INTEGER NOT NULL DEFAULT 0, plannedTotalSize INTEGER NOT NULL DEFAULT 0, cleanupId TEXT NOT NULL DEFAULT '', platform TEXT NOT NULL DEFAULT '', shareUrl TEXT NOT NULL DEFAULT '', avgSpeed INTEGER NOT NULL DEFAULT 0, engineTaskId TEXT NOT NULL DEFAULT '', altSourcesJson TEXT NOT NULL DEFAULT '', createTime INTEGER NOT NULL)",
+            "CREATE TABLE IF NOT EXISTS download_task (id INTEGER PRIMARY KEY AUTOINCREMENT, url TEXT NOT NULL, fileName TEXT NOT NULL, totalSize INTEGER NOT NULL, downloadedSize INTEGER NOT NULL, status INTEGER NOT NULL, errorMsg TEXT NOT NULL, savePath TEXT NOT NULL, requestHeadersJson TEXT NOT NULL DEFAULT '{}', chunkCount INTEGER NOT NULL DEFAULT 0, plannedTotalSize INTEGER NOT NULL DEFAULT 0, cleanupId TEXT NOT NULL DEFAULT '', platform TEXT NOT NULL DEFAULT '', shareUrl TEXT NOT NULL DEFAULT '', avgSpeed INTEGER NOT NULL DEFAULT 0, engineTaskId TEXT NOT NULL DEFAULT '', altSourcesJson TEXT NOT NULL DEFAULT '', saveDir TEXT NOT NULL DEFAULT '', directPart TEXT NOT NULL DEFAULT '', directMode INTEGER NOT NULL DEFAULT 0, createTime INTEGER NOT NULL)",
             "CREATE TABLE IF NOT EXISTS bookmark (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, link TEXT NOT NULL, title TEXT NOT NULL, platform TEXT NOT NULL, pwd TEXT NOT NULL, category TEXT NOT NULL, createTime INTEGER NOT NULL)",
             "CREATE TABLE IF NOT EXISTS link_history (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, url TEXT NOT NULL, title TEXT NOT NULL, platform TEXT NOT NULL, pwd TEXT NOT NULL, createTime INTEGER NOT NULL)"
         )
@@ -726,6 +743,11 @@ private class JdbcDownloadTaskDao(private val conn: Connection) : DownloadTaskDa
         engineTaskId = runCatching { rs.getString("engineTaskId") }.getOrDefault(""),
         // 旧库迁移期间 altSourcesJson 列可能尚未添加，runCatching 兜底返回空串（按单源处理）
         altSourcesJson = runCatching { rs.getString("altSourcesJson") }.getOrDefault(""),
+        // 旧库迁移期间 saveDir 列可能尚未添加（空串 = 跟随全局保存目录）
+        saveDir = runCatching { rs.getString("saveDir") }.getOrDefault(""),
+        // 实验性直写：旧库迁移期间列可能尚未添加
+        directPart = runCatching { rs.getString("directPart") }.getOrDefault(""),
+        directMode = runCatching { rs.getInt("directMode") }.getOrDefault(0),
         createTime = rs.getLong("createTime")
     )
 
@@ -736,8 +758,8 @@ private class JdbcDownloadTaskDao(private val conn: Connection) : DownloadTaskDa
             conn.prepareStatement(
                 "INSERT INTO download_task(url,fileName,totalSize,downloadedSize,status,errorMsg,savePath," +
                     "requestHeadersJson,chunkCount,plannedTotalSize,cleanupId,platform,shareUrl,avgSpeed,engineTaskId," +
-                    "altSourcesJson,createTime) " +
-                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "altSourcesJson,saveDir,directPart,directMode,createTime) " +
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 Statement.RETURN_GENERATED_KEYS
             ).use { ps ->
                 ps.setString(1, task.url)
@@ -756,7 +778,10 @@ private class JdbcDownloadTaskDao(private val conn: Connection) : DownloadTaskDa
                 ps.setLong(14, task.avgSpeed)
                 ps.setString(15, task.engineTaskId)
                 ps.setString(16, task.altSourcesJson)
-                ps.setLong(17, task.createTime)
+                ps.setString(17, task.saveDir)
+                ps.setString(18, task.directPart)
+                ps.setInt(19, task.directMode)
+                ps.setLong(20, task.createTime)
                 ps.executeUpdate()
                 ps.generatedKeys.use { gk -> if (gk.next()) gk.getLong(1) else task.id }
             }
@@ -770,6 +795,18 @@ private class JdbcDownloadTaskDao(private val conn: Connection) : DownloadTaskDa
                 ps.executeQuery().use { rs -> if (rs.next()) readTask(rs) else null }
             }
         }
+    }
+
+    override suspend fun listAll(): List<DownloadTaskEntity> = dbIo { loadAll() }
+
+    override suspend fun repairCompletedProgress() = dbIo {
+        synchronized(conn) {
+            conn.prepareStatement(
+                "UPDATE download_task SET downloadedSize = totalSize " +
+                    "WHERE status = 3 AND totalSize > 0 AND downloadedSize < totalSize"
+            ).use { it.executeUpdate() }
+        }
+        reload()
     }
 
     override suspend fun updateProgress(id: Long, status: Int, downloadedSize: Long, totalSize: Long) = dbIo {
@@ -846,7 +883,11 @@ private class JdbcDownloadTaskDao(private val conn: Connection) : DownloadTaskDa
     override suspend fun complete(id: Long, status: Int, savePath: String, avgSpeed: Long) = dbIo {
         synchronized(conn) {
             conn.prepareStatement(
-                "UPDATE download_task SET status = ?, savePath = ?, avgSpeed = ? WHERE id = ?"
+                // 完成任务：已知总大小时把已下载量补到总大小，避免 UI 显示「已完成 929KB / 1023KB」
+                // （Gopeed 轮询最后一次进度可能略小于 total）；未知大小（total=0）保留实际已下载量
+                "UPDATE download_task SET status = ?, savePath = ?, avgSpeed = ?, " +
+                    "downloadedSize = CASE WHEN totalSize > 0 THEN totalSize ELSE downloadedSize END " +
+                    "WHERE id = ?"
             ).use { ps ->
                 ps.setInt(1, status)
                 ps.setString(2, savePath)
@@ -873,6 +914,18 @@ private class JdbcDownloadTaskDao(private val conn: Connection) : DownloadTaskDa
             conn.prepareStatement("UPDATE download_task SET engineTaskId = ? WHERE id = ?").use { ps ->
                 ps.setString(1, engineTaskId)
                 ps.setLong(2, id)
+                ps.executeUpdate()
+            }
+        }
+        reload()
+    }
+
+    override suspend fun updateDirect(id: Long, partPath: String, mode: Int) = dbIo {
+        synchronized(conn) {
+            conn.prepareStatement("UPDATE download_task SET directPart = ?, directMode = ? WHERE id = ?").use { ps ->
+                ps.setString(1, partPath)
+                ps.setInt(2, mode)
+                ps.setLong(3, id)
                 ps.executeUpdate()
             }
         }

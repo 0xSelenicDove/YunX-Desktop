@@ -175,6 +175,7 @@ cd YunX-Desktop
 | [功能清单](docs/FEATURES.md)        | 全部功能与细节                        |
 | [使用说明](docs/USAGE.md)           | 快速上手、登录方式、设置项、数据目录、托盘操作        |
 | [构建与打包](docs/BUILD.md)          | 环境要求、命令、版本号、打包产物、目录结构          |
+| [下载引擎维护指南](docs/DOWNLOAD-ENGINE.md) | 下载链路、缓存/磁盘守卫、任务级保存目录、实验性直写、排障 |
 | [与安卓版的差异](docs/UPSTREAM-DIFF.md) | 桌面版相对安卓版的新增 / 重做 / 移除 |
 | [免责声明](docs/DISCLAIMER.md)      | 免责声明、协议逆向说明、反倒卖、开源协议           |
 
@@ -191,6 +192,14 @@ cd YunX-Desktop
 - PC 版仓库：<https://github.com/tidain/YunX-Desktop>
 
 - 问题与建议：<https://github.com/tidain/YunX-Desktop/issues>
+
+## 贡献者
+
+<sub><sup>Contributors</sup></sub>
+
+<a href="https://github.com/tidain/YunX-Desktop/graphs/contributors">
+  <img alt="contributors" src="https://contrib.rocks/image?repo=tidain/YunX-Desktop" />
+</a>
 
 ## Star History
 
