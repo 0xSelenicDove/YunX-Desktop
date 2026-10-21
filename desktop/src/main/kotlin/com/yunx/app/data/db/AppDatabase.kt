@@ -559,6 +559,16 @@ private class JdbcDownloadTaskDao(private val conn: Connection) : DownloadTaskDa
 
     override suspend fun listAll(): List<DownloadTaskEntity> = dbIo { loadAll() }
 
+    override suspend fun repairCompletedProgress() = dbIo {
+        synchronized(conn) {
+            conn.prepareStatement(
+                "UPDATE download_task SET downloadedSize = totalSize " +
+                    "WHERE status = 3 AND totalSize > 0 AND downloadedSize < totalSize"
+            ).use { it.executeUpdate() }
+        }
+        reload()
+    }
+
     override suspend fun updateProgress(id: Long, status: Int, downloadedSize: Long, totalSize: Long) = dbIo {
         synchronized(conn) {
             conn.prepareStatement(

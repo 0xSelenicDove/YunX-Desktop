@@ -82,6 +82,8 @@ interface DownloadTaskDao {
     suspend fun get(id: Long): DownloadTaskEntity?
     /** 全量任务快照（启动清理缓存时需要知道哪些任务还活着） */
     suspend fun listAll(): List<DownloadTaskEntity>
+    /** 修复旧版本已完成任务的显示进度：已知 total 时把 downloadedSize 补到 totalSize */
+    suspend fun repairCompletedProgress()
     suspend fun updateProgress(id: Long, status: Int, downloadedSize: Long, totalSize: Long)
     suspend fun updatePlan(id: Long, chunkCount: Int, totalSize: Long)
     suspend fun updateRequestHeaders(id: Long, encryptedHeaders: String)

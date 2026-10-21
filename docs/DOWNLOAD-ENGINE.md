@@ -357,7 +357,7 @@ $env:PATH="C:\Windows\System32;"+$env:PATH
 | 任务保存到错误目录 | `task.saveDir`、`effectiveSaveDir()`、调用方是否传 `saveDir` |
 | 完成但临时文件残留 | `commitDirectPart()` 是否执行、`directPart` 是否清空；删除任务/清理缓存 |
 | Gopeed 下载整个文件夹，完成后变成一个个单文件卡片 | 旧版 `completeEngineTask` 用纯文件名覆盖了相对路径；现已保留相对目录，启动时会从 `savePath` 反推修复旧任务 |
-| 已完成任务显示「已下载 < 总大小」 | `download_task.complete` 现在会把已知 total 的 `downloadedSize` 补到 `totalSize`（total=0 时保留实际值） |
+| 已完成任务显示「已下载 < 总大小」 | `download_task.complete` 会补齐；旧任务启动时 `repairCompletedProgress()` 批量修复（total=0 时保留实际值） |
 | 测试弹系统通知 | 集成测试是否设置了 `WindowsToastNotifier.enabled=false` |
 | 开发模式留下窗口 | 结束 `java ... com.yunx.app.MainKt` 进程 |
 

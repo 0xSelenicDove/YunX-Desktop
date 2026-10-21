@@ -1037,6 +1037,9 @@ class DownloadManager(
                 .onFailure { Log.w(TAG, "启动状态修复失败：${it.message}") }
             runCatching { DownloadCacheMaintenance.cleanAfterStartup(dao) }
                 .onFailure { Log.w(TAG, "启动缓存清理失败：${it.message}") }
+            // 兼容旧版本：已完成任务的轮询/进度可能略小于 total，补到总大小（只影响显示）
+            runCatching { dao.repairCompletedProgress() }
+                .onFailure { Log.w(TAG, "启动修复已完成任务进度失败：${it.message}") }
             // 兼容旧版本：Gopeed 完成任务时曾把「文件夹/子目录/文件」覆盖成纯文件名，
             // 导致下载页无法按文件夹分组。启动时从 savePath 反推相对路径修复一次（幂等）。
             runCatching { repairCompletedEngineFolderNames() }

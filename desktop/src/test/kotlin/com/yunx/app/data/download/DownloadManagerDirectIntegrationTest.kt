@@ -349,6 +349,15 @@ private class MemoryDownloadTaskDao : DownloadTaskDao {
     }
     override suspend fun get(id: Long): DownloadTaskEntity? = state.value.firstOrNull { it.id == id }
     override suspend fun listAll(): List<DownloadTaskEntity> = state.value
+    override suspend fun repairCompletedProgress() {
+        state.value = state.value.map {
+            if (it.status == DownloadTaskEntity.STATUS_COMPLETED && it.totalSize > 0 && it.downloadedSize < it.totalSize) {
+                it.copy(downloadedSize = it.totalSize)
+            } else {
+                it
+            }
+        }
+    }
     override suspend fun updateProgress(id: Long, status: Int, downloadedSize: Long, totalSize: Long) =
         mutate(id) { it.copy(status = status, downloadedSize = downloadedSize, totalSize = totalSize) }
     override suspend fun updatePlan(id: Long, chunkCount: Int, totalSize: Long) =
