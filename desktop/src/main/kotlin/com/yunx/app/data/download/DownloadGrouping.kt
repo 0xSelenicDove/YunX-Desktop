@@ -21,15 +21,14 @@ object DownloadGrouping {
     fun folderSaveRoot(task: DownloadTaskEntity, globalSaveRoot: String?): String {
         val name = task.fileName.replace('\\', '/')
         if (task.savePath.isNotBlank() && name.contains('/')) {
-            val saved = File(task.savePath)
-            if (saved.isFile) {
-                var dir = saved.parentFile
-                val segments = name.substringBeforeLast('/')
-                    .split('/')
-                    .filter { it.isNotBlank() }
-                repeat(segments.size) { dir = dir?.parentFile }
-                if (dir != null) return dir.absolutePath
-            }
+            // 只做路径字符串推导，不 stat 磁盘：任务列表每次进度刷新都会重算分组，
+            // 上百个任务时 canonicalPath/isFile 会带来明显的 UI 卡顿。
+            var dir = File(task.savePath).parentFile
+            val segments = name.substringBeforeLast('/')
+                .split('/')
+                .filter { it.isNotBlank() }
+            repeat(segments.size) { dir = dir?.parentFile }
+            if (dir != null) return dir.absolutePath
         }
         return task.saveDir.takeIf { it.isNotBlank() } ?: globalSaveRoot.orEmpty()
     }
@@ -44,10 +43,10 @@ object DownloadGrouping {
         return root to folder
     }
 
-    /** 规范化根目录用于分组比较；取 canonicalPath，Windows 下转小写并去掉末尾分隔符 */
+    /** 规范化根目录用于分组比较；取 absolutePath（不碰磁盘），Windows 下转小写并去掉末尾分隔符 */
     fun normalizeRoot(root: String): String {
         if (root.isBlank()) return ""
-        val path = runCatching { File(root).canonicalPath }.getOrDefault(root)
+        val path = File(root).absolutePath
         val trimmed = path.trimEnd('\\', '/')
         val isWindows = System.getProperty("os.name").lowercase().contains("win")
         return if (isWindows) trimmed.lowercase() else trimmed
