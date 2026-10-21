@@ -34,6 +34,7 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.DriveFileMove
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.Button
@@ -73,6 +74,7 @@ import com.yunx.app.ui.components.FadeAlertDialog
 import com.yunx.app.ui.items.MultiSelectAction
 import com.yunx.app.ui.items.MultiSelectBar
 import com.yunx.app.ui.components.ScrollToTopButton
+import com.yunx.app.ui.components.rememberDownloadDirPicker
 import com.yunx.app.ui.resolve.DownloadLinkDialog
 import com.yunx.app.ui.resolve.BackToParentItem
 import com.yunx.app.ui.resolve.CrumbBar
@@ -114,6 +116,7 @@ fun Pan115CloudScreen(
         if (s is Pan115CloudUiState.Loaded && s.pathNames.isNotEmpty()) viewModel.back() else onExit()
     }
     val listState = rememberLazyListState()
+    val pickDownloadDir = rememberDownloadDirPicker()
     var showActionSheet by remember { mutableStateOf(false) }
     var showRename by remember { mutableStateOf(false) }
     var showMove by remember { mutableStateOf(false) }
@@ -140,7 +143,8 @@ fun Pan115CloudScreen(
         DownloadLinkDialog(
             link = link,
             onDownload = { viewModel.startDownload() },
-            onDismiss = { viewModel.dismissDownloadDialog() }
+            onDismiss = { viewModel.dismissDownloadDialog() },
+            saveDir = viewModel.pendingSaveDir.takeIf { it.isNotBlank() }
         )
     }
 
@@ -332,6 +336,9 @@ fun Pan115CloudScreen(
                                 MultiSelectAction("下载", Icons.Outlined.Download, MaterialTheme.colorScheme.primary) {
                                     viewModel.downloadSelected()
                                 },
+                                MultiSelectAction("下载到…", Icons.Outlined.FolderOpen, MaterialTheme.colorScheme.primary) {
+                                    pickDownloadDir { viewModel.downloadSelected(it) }
+                                },
                                 MultiSelectAction("分享", Icons.Outlined.Share, MaterialTheme.colorScheme.primary) {
                                     showShare = true
                                 },
@@ -358,9 +365,21 @@ fun Pan115CloudScreen(
                 showActionSheet = false
                 viewModel.downloadFile()
             },
+            onDownloadTo = {
+                pickDownloadDir { dir ->
+                    showActionSheet = false
+                    viewModel.downloadFileTo(dir)
+                }
+            },
             onDownloadFolder = {
                 showActionSheet = false
                 viewModel.downloadFolder()
+            },
+            onDownloadFolderTo = {
+                pickDownloadDir { dir ->
+                    showActionSheet = false
+                    viewModel.downloadFolder(dir)
+                }
             },
             onRename = {
                 showActionSheet = false
@@ -538,7 +557,9 @@ private fun Pan115CreateFolderDialog(
 private fun Pan115ActionSheet(
     file: ShareFile,
     onDownload: () -> Unit,
+    onDownloadTo: () -> Unit,
     onDownloadFolder: (() -> Unit)? = null,
+    onDownloadFolderTo: (() -> Unit)? = null,
     onRename: () -> Unit,
     onMove: () -> Unit,
     onShare: () -> Unit,
@@ -585,8 +606,14 @@ private fun Pan115ActionSheet(
             Spacer(modifier = Modifier.height(8.dp))
             if (!file.isdir) {
                 Pan115ActionItem(Icons.Outlined.Download, "下载", "使用内置下载功能保存到本机", MaterialTheme.colorScheme.primary, onDownload)
-            } else if (onDownloadFolder != null) {
-                Pan115ActionItem(Icons.Outlined.Download, "下载文件夹", "递归下载整个文件夹，保持目录结构", MaterialTheme.colorScheme.primary, onDownloadFolder)
+                Pan115ActionItem(Icons.Outlined.FolderOpen, "下载到…", "选择本次保存的文件夹（不改全局设置）", MaterialTheme.colorScheme.primary, onDownloadTo)
+            } else {
+                if (onDownloadFolder != null) {
+                    Pan115ActionItem(Icons.Outlined.Download, "下载文件夹", "递归下载整个文件夹，保持目录结构", MaterialTheme.colorScheme.primary, onDownloadFolder)
+                }
+                if (onDownloadFolderTo != null) {
+                    Pan115ActionItem(Icons.Outlined.FolderOpen, "下载文件夹到…", "选择本次保存的文件夹（不改全局设置）", MaterialTheme.colorScheme.primary, onDownloadFolderTo)
+                }
             }
             Pan115ActionItem(Icons.Outlined.Share, "分享", "生成分享链接（有效期可设，访问码由服务端生成）", MaterialTheme.colorScheme.primary, onShare)
             Pan115ActionItem(Icons.Outlined.DriveFileMove, "移动到", "移动到网盘的其他目录", MaterialTheme.colorScheme.primary, onMove)

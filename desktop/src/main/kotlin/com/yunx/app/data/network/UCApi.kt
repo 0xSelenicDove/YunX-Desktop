@@ -703,6 +703,37 @@ suspend fun getDownloadLink(fid: String, cookie: String): DownloadLink? = withCo
         }
     }
 
+    /**
+     * 拉取**整个目录**的云盘文件列表（自动翻页）。
+     * 与 [QuarkApi.listAllCloudFiles] 同理：单页被服务端截断时，只取一页会漏掉 50 项之后的内容。
+     */
+    suspend fun listAllCloudFiles(
+        pdirFid: String,
+        cookie: String,
+        pageSize: Int = 50,
+        maxPages: Int = 200
+    ): List<ShareFile>? {
+        val first = listCloudFiles(pdirFid, cookie, page = 1, size = pageSize) ?: return null
+        val merged = LinkedHashMap<String, ShareFile>()
+        fun merge(batch: List<ShareFile>): Int {
+            var added = 0
+            for (file in batch) {
+                val key = file.fid.ifBlank { "${file.pdirFid}/${file.fname}" }
+                if (merged.putIfAbsent(key, file) == null) added++
+            }
+            return added
+        }
+        merge(first)
+        var page = 2
+        while (first.size >= pageSize && page <= maxPages) {
+            val batch = listCloudFiles(pdirFid, cookie, page = page, size = pageSize) ?: break
+            if (batch.isEmpty()) break
+            if (merge(batch) == 0) break
+            page++
+        }
+        return merged.values.toList()
+    }
+
     /** 重命名（抓包：POST file/rename） */
     suspend fun renameFile(fid: String, newName: String, cookie: String): Boolean =
         withContext(Dispatchers.IO) {

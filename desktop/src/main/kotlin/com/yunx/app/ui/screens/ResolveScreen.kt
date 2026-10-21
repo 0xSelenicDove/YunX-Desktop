@@ -75,6 +75,7 @@ import com.yunx.app.data.network.SharePlatform
 import com.yunx.app.data.network.model.ShareFile
 import com.yunx.app.ui.SnackbarController
 import com.yunx.app.ui.components.GitHubMarkdownImageTransformer
+import com.yunx.app.ui.components.rememberDownloadDirPicker
 import com.yunx.app.ui.resolve.DownloadLinkDialog
 import com.yunx.app.ui.resolve.LinkHistoryDialog
 import com.yunx.app.ui.resolve.ShareDetailScreen
@@ -126,6 +127,7 @@ fun ResolveScreen(
     val state = viewModel.uiState
     val downloadLink = viewModel.downloadLink
     val downloadError = viewModel.downloadError
+    val pickDownloadDir = rememberDownloadDirPicker()
 
     // 输入框状态提升到页面层：进入详情/文件夹再返回时不清空
     var link by rememberSaveable { mutableStateOf("") }
@@ -419,7 +421,9 @@ fun ResolveScreen(
         DownloadLinkDialog(
             link = link,
             onDownload = { viewModel.startDownload(link) },
-            onDismiss = { viewModel.dismissDownloadDialog() }
+            onDismiss = { viewModel.dismissDownloadDialog() },
+            saveDir = viewModel.pendingSaveDir.takeIf { it.isNotBlank() },
+            onChangeSaveDir = { pickDownloadDir { viewModel.chooseDownloadDir(it) } }
         )
     }
 

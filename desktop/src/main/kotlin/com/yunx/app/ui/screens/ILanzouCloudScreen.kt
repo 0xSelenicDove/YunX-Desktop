@@ -34,6 +34,7 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.DriveFileMove
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -67,6 +68,7 @@ import androidx.compose.ui.unit.dp
 import com.yunx.app.data.network.model.ShareFile
 import com.yunx.app.ui.components.FadeAlertDialog
 import com.yunx.app.ui.components.ScrollToTopButton
+import com.yunx.app.ui.components.rememberDownloadDirPicker
 import com.yunx.app.ui.items.MultiSelectAction
 import com.yunx.app.ui.items.MultiSelectBar
 import com.yunx.app.ui.resolve.BackToParentItem
@@ -113,6 +115,7 @@ fun ILanzouCloudScreen(
     var showActionSheet by remember { mutableStateOf(false) }
     var showRename by remember { mutableStateOf(false) }
     var showMove by remember { mutableStateOf(false) }
+    val pickDownloadDir = rememberDownloadDirPicker()
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showCreateFolder by remember { mutableStateOf(false) }
 
@@ -134,7 +137,8 @@ fun ILanzouCloudScreen(
         DownloadLinkDialog(
             link = link,
             onDownload = { viewModel.startDownload() },
-            onDismiss = { viewModel.dismissDownloadDialog() }
+            onDismiss = { viewModel.dismissDownloadDialog() },
+            saveDir = viewModel.pendingSaveDir.takeIf { it.isNotBlank() }
         )
     }
 
@@ -323,6 +327,9 @@ fun ILanzouCloudScreen(
                                 MultiSelectAction("下载", Icons.Outlined.Download, MaterialTheme.colorScheme.primary) {
                                     viewModel.downloadSelected()
                                 },
+                                MultiSelectAction("下载到…", Icons.Outlined.FolderOpen, MaterialTheme.colorScheme.primary) {
+                                    pickDownloadDir { viewModel.downloadSelected(it) }
+                                },
                                 MultiSelectAction("移动", Icons.Outlined.DriveFileMove, MaterialTheme.colorScheme.primary) {
                                     viewModel.openMoveRoot()
                                     showMove = true
@@ -346,9 +353,21 @@ fun ILanzouCloudScreen(
                 showActionSheet = false
                 viewModel.downloadFile()
             },
+            onDownloadTo = {
+                pickDownloadDir { dir ->
+                    showActionSheet = false
+                    viewModel.downloadFileTo(dir)
+                }
+            },
             onDownloadFolder = {
                 showActionSheet = false
                 viewModel.downloadFolder()
+            },
+            onDownloadFolderTo = {
+                pickDownloadDir { dir ->
+                    showActionSheet = false
+                    viewModel.downloadFolder(dir)
+                }
             },
             onRename = {
                 showActionSheet = false
@@ -456,7 +475,9 @@ fun ILanzouCloudScreen(
 private fun ILanzouActionSheet(
     file: ShareFile,
     onDownload: () -> Unit,
+    onDownloadTo: () -> Unit,
     onDownloadFolder: (() -> Unit)? = null,
+    onDownloadFolderTo: (() -> Unit)? = null,
     onRename: () -> Unit,
     onMove: () -> Unit,
     onDelete: () -> Unit,
@@ -510,11 +531,23 @@ private fun ILanzouActionSheet(
                     Icons.Outlined.Download, "下载", "使用内置下载功能保存到本机",
                     MaterialTheme.colorScheme.primary, onDownload
                 )
-            } else if (onDownloadFolder != null) {
                 ILanzouActionItem(
-                    Icons.Outlined.Download, "下载文件夹", "递归下载整个文件夹，保持目录结构",
-                    MaterialTheme.colorScheme.primary, onDownloadFolder
+                    Icons.Outlined.FolderOpen, "下载到…", "选择本次保存的文件夹（不改全局设置）",
+                    MaterialTheme.colorScheme.primary, onDownloadTo
                 )
+            } else {
+                if (onDownloadFolder != null) {
+                    ILanzouActionItem(
+                        Icons.Outlined.Download, "下载文件夹", "递归下载整个文件夹，保持目录结构",
+                        MaterialTheme.colorScheme.primary, onDownloadFolder
+                    )
+                }
+                if (onDownloadFolderTo != null) {
+                    ILanzouActionItem(
+                        Icons.Outlined.FolderOpen, "下载文件夹到…", "选择本次保存的文件夹（不改全局设置）",
+                        MaterialTheme.colorScheme.primary, onDownloadFolderTo
+                    )
+                }
             }
             ILanzouActionItem(
                 Icons.Outlined.DriveFileMove, "移动到", "移动到网盘的其他目录",

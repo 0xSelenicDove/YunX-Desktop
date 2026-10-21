@@ -141,6 +141,15 @@ data class DownloadTaskEntity(
      * 非空时该任务的进度由引擎同步协程回写，暂停 / 继续 / 删除都要转发给引擎。
      */
     val engineTaskId: String = "",
+    /**
+     * 本任务的保存目录覆盖（绝对路径）；空串 = 跟随「设置 → 储存目录」的下载保存目录。
+     * 单次下载选择「下载到…」时写入，暂停/续传/重新下载都沿用它，不受之后改全局设置影响。
+     */
+    val saveDir: String = "",
+    /** 实验性直写：目标目录中的 `.yunx-*.part` 绝对路径；空串 = 非直写（走缓存分片） */
+    val directPart: String = "",
+    /** 直写模式：0=非直写，1=单线程直写，2=多线程直写 */
+    val directMode: Int = 0,
     val createTime: Long = System.currentTimeMillis()
 ) {
     companion object {

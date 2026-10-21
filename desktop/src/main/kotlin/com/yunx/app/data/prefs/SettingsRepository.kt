@@ -318,6 +318,28 @@ class SettingsRepository {
             )
         }
 
+    /**
+     * 实验性：单线程直写。
+     * 线程数为 1 时不再写缓存分片，直接写目标目录的 `.yunx-*.part`，完成后改名。
+     * 目标盘峰值从「分片 + 成品」降为 1 份，缓存盘占用为 0。
+     */
+    var directWriteSingleThread: Boolean
+        get() = prefs.getBoolean("direct_write_single_thread", DEFAULT_DIRECT_WRITE_SINGLE_THREAD)
+        set(value) {
+            prefs.putBoolean("direct_write_single_thread", value)
+        }
+
+    /**
+     * 实验性：多线程直写。
+     * 线程数 > 1 时预分配目标目录的单个 `.yunx-*.part`，各线程按字节偏移写入；
+     * 进度由同目录的 `.plan` / `.done` 清单维护，完成后校验并改名。
+     */
+    var directWriteMultiThread: Boolean
+        get() = prefs.getBoolean("direct_write_multi_thread", DEFAULT_DIRECT_WRITE_MULTI_THREAD)
+        set(value) {
+            prefs.putBoolean("direct_write_multi_thread", value)
+        }
+
     /** 主页快捷方式（默认关）：开启后在解析页以横向快捷方式展示收藏，点击直达解析 */
     var homeShortcutEnabled: Boolean
         get() = prefs.getBoolean("home_shortcut_enabled", false)
@@ -351,6 +373,8 @@ class SettingsRepository {
         slowPreemptEnabled = DEFAULT_SLOW_PREEMPT_ENABLED
         slowPreemptMinBps = DEFAULT_SLOW_PREEMPT_MIN_BPS
         slowPreemptMinAgeMs = DEFAULT_SLOW_PREEMPT_MIN_AGE_MS
+        directWriteSingleThread = DEFAULT_DIRECT_WRITE_SINGLE_THREAD
+        directWriteMultiThread = DEFAULT_DIRECT_WRITE_MULTI_THREAD
         homeShortcutEnabled = false
     }
 
@@ -389,6 +413,10 @@ class SettingsRepository {
 
         /** HTTP/2 默认关闭（与现状一致：仅使用 HTTP/1.1） */
         const val DEFAULT_HTTP2_ENABLED = false
+
+        /** 实验性直写默认关闭：默认仍走缓存分片 + 合并，保证现有行为不变 */
+        const val DEFAULT_DIRECT_WRITE_SINGLE_THREAD = false
+        const val DEFAULT_DIRECT_WRITE_MULTI_THREAD = false
 
         /**
          * 下载读缓冲默认 64KB（与 ChunkDownloader.BUFFER_SIZE 一致，保证默认行为不变）。

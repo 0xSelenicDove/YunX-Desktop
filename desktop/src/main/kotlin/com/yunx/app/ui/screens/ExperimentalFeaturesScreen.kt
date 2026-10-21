@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Bookmarks
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Speed
@@ -97,6 +98,8 @@ fun ExperimentalFeaturesScreen(
     var preemptEnabled by remember { mutableStateOf(settingsRepo.slowPreemptEnabled) }
     var preemptMinBps by remember { mutableStateOf(settingsRepo.slowPreemptMinBps) }
     var preemptMinAgeMs by remember { mutableStateOf(settingsRepo.slowPreemptMinAgeMs) }
+    var directSingle by remember { mutableStateOf(settingsRepo.directWriteSingleThread) }
+    var directMulti by remember { mutableStateOf(settingsRepo.directWriteMultiThread) }
     var homeShortcut by remember { mutableStateOf(settingsRepo.homeShortcutEnabled) }
 
     var showBufferDialog by remember { mutableStateOf(false) }
@@ -251,6 +254,56 @@ fun ExperimentalFeaturesScreen(
             )
             Spacer(modifier = Modifier.height(8.dp))
 
+            // 实验性：单线程直写
+            SettingsItem(
+                icon = Icons.Outlined.Download,
+                title = "单线程直写（实验性）",
+                description = if (directSingle) {
+                    "已开启：线程数为 1 时直接写目标目录的 .part，完成后改名；缓存盘占用 0，目标盘峰值 1 份"
+                } else {
+                    "默认关闭：线程数为 1 时仍写缓存分片，再合并到目标目录"
+                },
+                onClick = {
+                    directSingle = !directSingle
+                    settingsRepo.directWriteSingleThread = directSingle
+                    SnackbarController.show(
+                        if (directSingle) "已开启单线程直写（实验性）" else "已关闭单线程直写"
+                    )
+                },
+                trailing = { Switch(checked = directSingle, onCheckedChange = null) }
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // 实验性：多线程直写
+            SettingsItem(
+                icon = Icons.Outlined.Bolt,
+                title = "多线程直写（实验性）",
+                description = if (directMulti) {
+                    "已开启：预分配目标目录的单个 .part，各线程按偏移并行写；不占缓存盘，提交前逐片校验"
+                } else {
+                    "默认关闭：多线程仍写缓存分片，再合并到目标目录"
+                },
+                onClick = {
+                    directMulti = !directMulti
+                    settingsRepo.directWriteMultiThread = directMulti
+                    SnackbarController.show(
+                        if (directMulti) "已开启多线程直写（实验性）" else "已关闭多线程直写"
+                    )
+                },
+                trailing = { Switch(checked = directMulti, onCheckedChange = null) }
+            )
+            if (directSingle || directMulti) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "⚠ 直写为实验性功能，仅对「内置下载器」生效（Gopeed 引擎本身直接落盘，不受此开关影响）。" +
+                        "临时文件（.yunx-*.part / .plan / .done）会出现在下载保存目录；暂停/失败后会保留以便续传。" +
+                        "若目标盘是移动硬盘/网络盘，断开后该任务无法续传。对已开始的任务，开关变更不会改变其已选择的模式。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+
             // 主页快捷方式
             SettingsItem(
                 icon = Icons.Outlined.Bookmarks,
@@ -282,7 +335,8 @@ fun ExperimentalFeaturesScreen(
             }
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "默认值：HTTP/2 关闭、读缓冲 64 KB、慢连接抢占开启（12 KB/s · 15 秒）、主页快捷方式关闭。",
+                text = "默认值：HTTP/2 关闭、读缓冲 64 KB、慢连接抢占开启（12 KB/s · 15 秒）、" +
+                    "两种直写关闭、主页快捷方式关闭。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -464,6 +518,7 @@ fun ExperimentalFeaturesScreen(
                     text = "· HTTP/2：关闭\n" +
                         "· 读缓冲：64 KB\n" +
                         "· 慢连接抢占：开启（12 KB/s · 15 秒）\n" +
+                        "· 单线程直写 / 多线程直写：关闭\n" +
                         "· 主页快捷方式：关闭",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -485,6 +540,8 @@ fun ExperimentalFeaturesScreen(
                     preemptEnabled = settingsRepo.slowPreemptEnabled
                     preemptMinBps = settingsRepo.slowPreemptMinBps
                     preemptMinAgeMs = settingsRepo.slowPreemptMinAgeMs
+                    directSingle = settingsRepo.directWriteSingleThread
+                    directMulti = settingsRepo.directWriteMultiThread
                     homeShortcut = settingsRepo.homeShortcutEnabled
                     onHomeShortcutChanged(settingsRepo.homeShortcutEnabled)
                     SnackbarController.show("已重置为默认值")
