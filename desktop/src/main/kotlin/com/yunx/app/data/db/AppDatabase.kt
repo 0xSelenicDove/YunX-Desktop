@@ -633,7 +633,11 @@ private class JdbcDownloadTaskDao(private val conn: Connection) : DownloadTaskDa
     override suspend fun complete(id: Long, status: Int, savePath: String, avgSpeed: Long) = dbIo {
         synchronized(conn) {
             conn.prepareStatement(
-                "UPDATE download_task SET status = ?, savePath = ?, avgSpeed = ? WHERE id = ?"
+                // 完成任务：已知总大小时把已下载量补到总大小，避免 UI 显示「已完成 929KB / 1023KB」
+                // （Gopeed 轮询最后一次进度可能略小于 total）；未知大小（total=0）保留实际已下载量
+                "UPDATE download_task SET status = ?, savePath = ?, avgSpeed = ?, " +
+                    "downloadedSize = CASE WHEN totalSize > 0 THEN totalSize ELSE downloadedSize END " +
+                    "WHERE id = ?"
             ).use { ps ->
                 ps.setInt(1, status)
                 ps.setString(2, savePath)

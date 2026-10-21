@@ -244,6 +244,28 @@ class DownloadManagerDirectIntegrationTest {
         assertNoCacheChunks(id)
     }
 
+    @Test
+    fun derivesFolderRelativeNameFromSavePath() {
+        val base = File("build/grouping-test").apply {
+            deleteRecursively()
+            mkdirs()
+        }
+        val nested = File(base, "夸克精选壁纸/sub/01.jpg").apply {
+            parentFile?.mkdirs()
+            writeBytes(byteArrayOf(1))
+        }
+        val root = File(base, "root.jpg").apply { writeBytes(byteArrayOf(2)) }
+        val outside = File(base.parentFile, "outside.jpg").apply {
+            parentFile?.mkdirs()
+            writeBytes(byteArrayOf(3))
+        }
+        val manager = newManager(MemoryDownloadTaskDao(), threads = 1, single = false, multi = false)
+
+        assertEquals("夸克精选壁纸/sub/01.jpg", manager.folderRelativeName(base, nested.absolutePath))
+        assertEquals(null, manager.folderRelativeName(base, root.absolutePath))
+        assertEquals(null, manager.folderRelativeName(base, outside.absolutePath))
+    }
+
     private fun newManager(
         dao: DownloadTaskDao,
         threads: Int,
@@ -318,7 +340,14 @@ private class MemoryDownloadTaskDao : DownloadTaskDao {
     override suspend fun updateStatus(id: Long, status: Int) = mutate(id) { it.copy(status = status) }
     override suspend fun updateError(id: Long, errorMsg: String) = mutate(id) { it.copy(errorMsg = errorMsg) }
     override suspend fun complete(id: Long, status: Int, savePath: String, avgSpeed: Long) =
-        mutate(id) { it.copy(status = status, savePath = savePath, avgSpeed = avgSpeed) }
+        mutate(id) {
+            it.copy(
+                status = status,
+                savePath = savePath,
+                avgSpeed = avgSpeed,
+                downloadedSize = if (it.totalSize > 0) it.totalSize else it.downloadedSize
+            )
+        }
     override suspend fun delete(id: Long) {
         state.value = state.value.filterNot { it.id == id }
     }

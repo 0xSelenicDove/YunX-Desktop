@@ -1037,6 +1037,10 @@ class DownloadManager(
                 .onFailure { Log.w(TAG, "启动状态修复失败：${it.message}") }
             runCatching { DownloadCacheMaintenance.cleanAfterStartup(dao) }
                 .onFailure { Log.w(TAG, "启动缓存清理失败：${it.message}") }
+            // 兼容旧版本：Gopeed 完成任务时曾把「文件夹/子目录/文件」覆盖成纯文件名，
+            // 导致下载页无法按文件夹分组。启动时从 savePath 反推相对路径修复一次（幂等）。
+            runCatching { repairCompletedEngineFolderNames() }
+                .onFailure { Log.w(TAG, "启动修复 Gopeed 文件夹显示名失败：${it.message}") }
         }
     }
 
@@ -1290,10 +1294,24 @@ class DownloadManager(
             size = total,
             summary = "path=$savedPath 文件数=${detail?.fileCount ?: -1} 目录=${detail?.folder ?: false}"
         )
-        if (realName != task.fileName) {
+        if (task.platform == DownloadPlatform.MAGNET) {
             // 磁力：把界面上占位的显示名换成真正的种子名（失败只记日志，不影响已完成状态）
-            runCatching { dao.updateFileName(task.id, realName) }
-                .onFailure { Log.w(TAG, "回写种子名失败：id=${task.id} ${it.message}") }
+            if (realName != task.fileName) {
+                runCatching { dao.updateFileName(task.id, realName) }
+                    .onFailure { Log.w(TAG, "回写种子名失败：id=${task.id} ${it.message}") }
+            }
+        } else {
+            // 非磁力：引擎 detail.name 只是“文件名”，不能直接覆盖文件夹下载的相对路径
+            // （如「文件夹A/子目录/文件.mp4」），否则下载页按 fileName 分组的逻辑会失效。
+            // 保留原相对目录，只替换最后一段文件名（引擎可能因重名自动改名）。
+            val safe = DownloadPathPolicy.sanitize(task.fileName, "")
+            val relDir = safe?.relativeDirectory.orEmpty()
+            val actualBase = realName.substringAfterLast('/').substringAfterLast('\\')
+            val displayName = if (relDir.isBlank()) actualBase else "$relDir/$actualBase"
+            if (displayName.isNotBlank() && displayName != task.fileName) {
+                runCatching { dao.updateFileName(task.id, displayName) }
+                    .onFailure { Log.w(TAG, "回写文件名失败：id=${task.id} ${it.message}") }
+            }
         }
         taskCallbacks.remove(task.id)?.let { runCatching { it() } }
         taskHeaders.remove(task.id)
@@ -1305,6 +1323,48 @@ class DownloadManager(
             "引擎任务完成：id=${task.id} path=$savedPath name=$realName " +
                 "files=${detail?.fileCount ?: -1} folder=${detail?.folder ?: false}"
         )
+    }
+
+    /**
+     * 修复旧版本 Gopeed 文件夹任务的显示路径。
+     *
+     * 旧版 `completeEngineTask` 用引擎返回的纯文件名覆盖了 `fileName`，
+     * 使「文件夹A/子目录/文件.mp4」变成「文件.mp4」，下载页按 `/` 分组的逻辑失效。
+     * 这里只在能安全推导时修复：已完成、非磁力、fileName 不含 `/`、savePath 是文件且位于保存目录内。
+     * 纯幂等操作：修复后 fileName 含 `/`，下次启动自动跳过。
+     */
+    private suspend fun repairCompletedEngineFolderNames() {
+        val tasks = runCatching { dao.listAll() }.getOrElse { return }
+        var fixed = 0
+        for (task in tasks) {
+            if (task.engineTaskId.isBlank()) continue
+            if (task.platform == DownloadPlatform.MAGNET) continue
+            if (task.status != DownloadTaskEntity.STATUS_COMPLETED) continue
+            if (task.fileName.contains('/')) continue
+            if (task.savePath.isBlank()) continue
+            val base = DownloadSaver.resolveSaveDir(
+                task.saveDir.takeIf { it.isNotBlank() } ?: saveDirProvider()
+            )
+            val rel = folderRelativeName(base, task.savePath) ?: continue
+            runCatching { dao.updateFileName(task.id, rel) }.onSuccess { fixed++ }
+        }
+        if (fixed > 0) Log.i(TAG, "已修复 $fixed 个 Gopeed 文件夹任务的显示路径")
+    }
+
+    /**
+     * 目标文件相对保存根目录的路径；只有位于子目录（含 `/`）时才返回，根目录单文件返回 null。
+     * 用于把 Gopeed 完成后丢失的相对路径从 `savePath` 反推回来。
+     */
+    internal fun folderRelativeName(baseDir: File, savePath: String): String? {
+        val base = runCatching { baseDir.canonicalFile }.getOrNull() ?: return null
+        val file = File(savePath)
+        if (!file.isFile) return null
+        val target = runCatching { file.canonicalFile }.getOrNull() ?: return null
+        val basePath = base.toPath()
+        val targetPath = target.toPath()
+        if (!targetPath.startsWith(basePath)) return null
+        val rel = basePath.relativize(targetPath).toString().replace(File.separatorChar, '/')
+        return rel.takeIf { it.contains('/') }
     }
 
     // ---------- 内部实现 ----------

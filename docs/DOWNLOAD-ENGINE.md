@@ -319,7 +319,7 @@ java -cp "desktop/build/classes/kotlin/test;desktop/build/classes/kotlin/main;de
 
 - 集成测试会走真实 `DownloadManager`；测试内已设置 `WindowsToastNotifier.enabled = false`，不会弹系统通知。
 - 直写集成测试覆盖：单线程、多线程、单线程续传、多线程 `.plan/.done` 续传、Range 忽略→单线程回退、Range 忽略→缓存回退。
-- 当前完整套件：**46 个测试通过**。
+- 当前完整套件：**47 个测试通过**。
 
 ### 打包
 
@@ -356,6 +356,8 @@ $env:PATH="C:\Windows\System32;"+$env:PATH
 | 续传从 0 开始 | `.plan/.done` 是否存在、total 是否变化、服务器是否支持 Range |
 | 任务保存到错误目录 | `task.saveDir`、`effectiveSaveDir()`、调用方是否传 `saveDir` |
 | 完成但临时文件残留 | `commitDirectPart()` 是否执行、`directPart` 是否清空；删除任务/清理缓存 |
+| Gopeed 下载整个文件夹，完成后变成一个个单文件卡片 | 旧版 `completeEngineTask` 用纯文件名覆盖了相对路径；现已保留相对目录，启动时会从 `savePath` 反推修复旧任务 |
+| 已完成任务显示「已下载 < 总大小」 | `download_task.complete` 现在会把已知 total 的 `downloadedSize` 补到 `totalSize`（total=0 时保留实际值） |
 | 测试弹系统通知 | 集成测试是否设置了 `WindowsToastNotifier.enabled=false` |
 | 开发模式留下窗口 | 结束 `java ... com.yunx.app.MainKt` 进程 |
 
@@ -379,7 +381,7 @@ $env:PATH="C:\Windows\System32;"+$env:PATH
 ## 11. 本轮验证记录
 
 - `:desktop:compileKotlin` / `:desktop:compileTestKotlin` 通过。
-- 完整测试套件 46 个测试通过（含 6 个直写端到端测试）。
+- 完整测试套件 47 个测试通过（含 6 个直写端到端测试 + 1 个文件夹显示路径测试）。
 - 旧 schema 数据库启动后自动补 `saveDir` / `directPart` / `directMode` 列，应用正常打开。
 - 安装包已实际启动验证（数据库、暗色模式、JCEF 正常）。
 - 当前安装包：`release\YunX-Desktop-setup-1.2.9.exe`，约 202 MB。
