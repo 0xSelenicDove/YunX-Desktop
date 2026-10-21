@@ -1304,10 +1304,7 @@ class DownloadManager(
             // 非磁力：引擎 detail.name 只是“文件名”，不能直接覆盖文件夹下载的相对路径
             // （如「文件夹A/子目录/文件.mp4」），否则下载页按 fileName 分组的逻辑会失效。
             // 保留原相对目录，只替换最后一段文件名（引擎可能因重名自动改名）。
-            val safe = DownloadPathPolicy.sanitize(task.fileName, "")
-            val relDir = safe?.relativeDirectory.orEmpty()
-            val actualBase = realName.substringAfterLast('/').substringAfterLast('\\')
-            val displayName = if (relDir.isBlank()) actualBase else "$relDir/$actualBase"
+            val displayName = engineDisplayName(task.fileName, realName)
             if (displayName.isNotBlank() && displayName != task.fileName) {
                 runCatching { dao.updateFileName(task.id, displayName) }
                     .onFailure { Log.w(TAG, "回写文件名失败：id=${task.id} ${it.message}") }
@@ -1349,6 +1346,17 @@ class DownloadManager(
             runCatching { dao.updateFileName(task.id, rel) }.onSuccess { fixed++ }
         }
         if (fixed > 0) Log.i(TAG, "已修复 $fixed 个 Gopeed 文件夹任务的显示路径")
+    }
+
+    /**
+     * 非磁力 Gopeed 任务完成后的显示名：保留原相对目录，只替换最后一段文件名。
+     * 例：requested=`文件夹/子/文件.mp4`, actual=`文件(1).mp4` → `文件夹/子/文件(1).mp4`
+     */
+    internal fun engineDisplayName(requestedName: String, actualName: String): String {
+        val safe = DownloadPathPolicy.sanitize(requestedName, "")
+        val relDir = safe?.relativeDirectory.orEmpty()
+        val actualBase = actualName.substringAfterLast('/').substringAfterLast('\\')
+        return if (relDir.isBlank()) actualBase else "$relDir/$actualBase"
     }
 
     /**

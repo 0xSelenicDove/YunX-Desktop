@@ -319,7 +319,7 @@ java -cp "desktop/build/classes/kotlin/test;desktop/build/classes/kotlin/main;de
 
 - 集成测试会走真实 `DownloadManager`；测试内已设置 `WindowsToastNotifier.enabled = false`，不会弹系统通知。
 - 直写集成测试覆盖：单线程、多线程、单线程续传、多线程 `.plan/.done` 续传、Range 忽略→单线程回退、Range 忽略→缓存回退。
-- 当前完整套件：**47 个测试通过**。
+- 当前完整套件：**48 个测试通过**。
 
 ### 打包
 
@@ -381,7 +381,7 @@ $env:PATH="C:\Windows\System32;"+$env:PATH
 ## 11. 本轮验证记录
 
 - `:desktop:compileKotlin` / `:desktop:compileTestKotlin` 通过。
-- 完整测试套件 47 个测试通过（含 6 个直写端到端测试 + 1 个文件夹显示路径测试）。
+- 完整测试套件 48 个测试通过（含 6 个直写端到端测试 + 2 个 Gopeed 文件夹显示测试）。
 - 旧 schema 数据库启动后自动补 `saveDir` / `directPart` / `directMode` 列，应用正常打开。
 - 安装包已实际启动验证（数据库、暗色模式、JCEF 正常）。
 - 当前安装包：`release\YunX-Desktop-setup-1.2.9.exe`，约 202 MB。

@@ -266,6 +266,25 @@ class DownloadManagerDirectIntegrationTest {
         assertEquals(null, manager.folderRelativeName(base, outside.absolutePath))
     }
 
+    @Test
+    fun engineDisplayNameKeepsFolderPrefix() {
+        val manager = newManager(MemoryDownloadTaskDao(), threads = 1, single = false, multi = false)
+        assertEquals(
+            "夸克精选壁纸/sub/01.jpg",
+            manager.engineDisplayName("夸克精选壁纸/sub/01.jpg", "01.jpg")
+        )
+        assertEquals(
+            "夸克精选壁纸/01 (1).jpg",
+            manager.engineDisplayName("夸克精选壁纸/01.jpg", "01 (1).jpg")
+        )
+        assertEquals("root.jpg", manager.engineDisplayName("root.jpg", "root.jpg"))
+        // 引擎若返回带路径的名字，只取最后一段，避免相对目录重复
+        assertEquals(
+            "夸克精选壁纸/01.jpg",
+            manager.engineDisplayName("夸克精选壁纸/01.jpg", "sub/01.jpg")
+        )
+    }
+
     private fun newManager(
         dao: DownloadTaskDao,
         threads: Int,
