@@ -83,6 +83,7 @@ import com.yunx.app.data.download.DownloadStats
 import com.yunx.app.data.download.MagnetLink
 import com.yunx.app.ui.SnackbarController
 import com.yunx.app.ui.components.FadeAlertDialog
+import com.yunx.app.ui.components.rememberDownloadDirPicker
 import com.yunx.app.ui.theme.ThemeController
 import com.yunx.app.ui.viewmodel.DownloadViewModel
 import com.yunx.app.util.DesktopActions
@@ -212,9 +213,9 @@ fun DownloadScreen(
     if (showAddDialog) {
         AddDownloadDialog(
             onDismiss = { showAddDialog = false },
-            onConfirm = { url, name ->
+            onConfirm = { url, name, saveDir ->
                 showAddDialog = false
-                viewModel.enqueue(url, name)
+                viewModel.enqueue(url, name, saveDir = saveDir)
             }
         )
     }
@@ -601,9 +602,10 @@ private fun DownloadSubTaskRow(
     // 合并阶段进度（-1 = 不在合并）：合并时下载早就 100% 了，进度条改用合并百分比，
     // 否则大文件会一直停在 100% 像卡死
     val mergePercent = stats?.mergePercent ?: -1
-    val merging = mergePercent >= 0
+    val verifying = stats?.verifying == true
+    val merging = mergePercent >= 0 && !verifying
     val fraction = when {
-        merging -> mergePercent / 100f
+        mergePercent >= 0 -> mergePercent / 100f
         task.totalSize > 0 -> (task.downloadedSize.toFloat() / task.totalSize).coerceIn(0f, 1f)
         else -> 0f
     }
@@ -649,6 +651,7 @@ private fun DownloadSubTaskRow(
                     )
                     Text(
                         text = when {
+                            verifying -> "校验中 · $mergePercent%"
                             merging -> "合并中 · $mergePercent%"
                             isDownloading && stats != null && stats.speed > 0 ->
                                 "${DownloadTaskEntity.statusText(task.status)} · ${formatSpeed(stats.speed)}"
@@ -769,9 +772,10 @@ private fun DownloadTaskCard(
         task.status == DownloadTaskEntity.STATUS_PENDING
     // 合并阶段进度（-1 = 不在合并）：合并时下载早就 100% 了，界面改显示合并百分比
     val mergePercent = stats?.mergePercent ?: -1
-    val merging = mergePercent >= 0
+    val verifying = stats?.verifying == true
+    val merging = mergePercent >= 0 && !verifying
     val fraction = when {
-        merging -> mergePercent / 100f
+        mergePercent >= 0 -> mergePercent / 100f
         task.totalSize > 0 -> (task.downloadedSize.toFloat() / task.totalSize).coerceIn(0f, 1f)
         else -> 0f
     }
@@ -816,7 +820,11 @@ private fun DownloadTaskCard(
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = if (merging) "合并中 · $mergePercent%" else taskStatusLine(task),
+                        text = when {
+                            verifying -> "校验中 · $mergePercent%"
+                            merging -> "合并中 · $mergePercent%"
+                            else -> taskStatusLine(task)
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -907,6 +915,8 @@ private fun DownloadTaskCard(
                         } else {
                             formatSize(task.totalSize)
                         }
+                    } else if (verifying) {
+                        "正在校验直写文件 · $mergePercent% · ${formatSize(task.totalSize)}"
                     } else if (merging) {
                         // 合并阶段：底部不要再显示"已下载 100%"，明确告知正在合并
                         "正在合并分片 · $mergePercent% · ${formatSize(task.totalSize)}"
@@ -1015,10 +1025,17 @@ private fun formatRemain(millis: Long): String {
 @Composable
 private fun AddDownloadDialog(
     onDismiss: () -> Unit,
-    onConfirm: (url: String, name: String) -> Unit
+    onConfirm: (url: String, name: String, saveDir: String) -> Unit
 ) {
     var url by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
+    var saveDir by remember { mutableStateOf("") }
+    val pickSaveDir = rememberDownloadDirPicker()
+    val defaultDir = remember {
+        DownloadSaver.resolveSaveDir(
+            com.yunx.app.data.prefs.SettingsRepository().downloadDirUri
+        ).absolutePath
+    }
     val isMagnet = MagnetLink.isMagnet(url)
 
     AlertDialog(
@@ -1026,16 +1043,19 @@ private fun AddDownloadDialog(
         title = { Text("添加下载任务") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    // 自定义保存目录在「设置 → 储存目录」里改，这里如实显示当前生效的位置
-                    text = "下载文件将保存到 ${
-                        DownloadSaver.resolveSaveDir(
-                            com.yunx.app.data.prefs.SettingsRepository().downloadDirUri
-                        ).absolutePath
-                    } 目录",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "保存到：${saveDir.ifBlank { "$defaultDir（默认）" }}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    TextButton(onClick = { pickSaveDir { saveDir = it } }) {
+                        Text(if (saveDir.isBlank()) "选择目录" else "更改")
+                    }
+                }
                 OutlinedTextField(
                     value = url,
                     onValueChange = {
@@ -1072,7 +1092,7 @@ private fun AddDownloadDialog(
         },
         confirmButton = {
             Button(
-                onClick = { onConfirm(url.trim(), name.trim()) },
+                onClick = { onConfirm(url.trim(), name.trim(), saveDir) },
                 // 磁力允许留空文件名：真正的名字要等引擎拿到元数据（DownloadManager 会自己兜底）
                 enabled = url.isNotBlank() && (name.isNotBlank() || isMagnet)
             ) { Text("开始下载") }

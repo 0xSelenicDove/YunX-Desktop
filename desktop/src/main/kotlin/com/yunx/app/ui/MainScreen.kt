@@ -319,6 +319,9 @@ fun MainScreen(
             retryCountProvider = { settings.downloadRetryCount },
             keepAwakeProvider = { settings.keepAwakeWhileDownloading },
             showSpeedProvider = { settings.notificationShowSpeed },
+            // 实验性直写：单线程/多线程分别开关（设置 → 实验性功能）
+            directWriteSingleProvider = { settings.directWriteSingleThread },
+            directWriteMultiProvider = { settings.directWriteMultiThread },
             // 下载引擎开关：选了 Gopeed 时新任务交给外部引擎（还需内核已导入、平台非 GitHub）
             engineEnabledProvider = { settings.downloadEngine == SettingsRepository.ENGINE_GOPEED }
         )

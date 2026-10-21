@@ -279,6 +279,44 @@ class QuarkApi(
         }
     }
 
+    /**
+     * 拉取**整个目录**的云盘文件列表（自动翻页）。
+     *
+     * 服务端单页最多返回 50 项（`_size` 传更大也会被截断），因此「只打一次 listCloudFiles」
+     * 的调用方在大目录里只能看到/下载前 50 项。这里按页循环直到取完，并做两重保险：
+     * - 按 fid 去重：服务端若忽略页码重复返回同一页，不会把列表撑大；
+     * - 整页无新增项即停止：翻到尽头（或接口异常返回重复数据）时不会死循环。
+     */
+    suspend fun listAllCloudFiles(
+        pdirFid: String,
+        cookie: String,
+        /** 单页条数；夸克云盘接口实测上限 50 */
+        pageSize: Int = 50,
+        /** 安全上限：防止异常响应导致无限翻页（200 页 × 50 = 1 万项） */
+        maxPages: Int = 200
+    ): List<ShareFile>? {
+        val first = listCloudFiles(pdirFid, cookie, page = 1, size = pageSize) ?: return null
+        val merged = LinkedHashMap<String, ShareFile>()
+        fun merge(batch: List<ShareFile>): Int {
+            var added = 0
+            for (file in batch) {
+                // fid 理论上非空；异常数据退化为「名字 + 父目录」做键，避免被误去重
+                val key = file.fid.ifBlank { "${file.pdirFid}/${file.fname}" }
+                if (merged.putIfAbsent(key, file) == null) added++
+            }
+            return added
+        }
+        merge(first)
+        var page = 2
+        while (first.size >= pageSize && page <= maxPages) {
+            val batch = listCloudFiles(pdirFid, cookie, page = page, size = pageSize) ?: break
+            if (batch.isEmpty()) break
+            if (merge(batch) == 0) break
+            page++
+        }
+        return merged.values.toList()
+    }
+
     /** 创建目录（个人网盘），返回新目录 fid */
     suspend fun createFolder(name: String, parentFid: String, cookie: String): String? =
         withContext(Dispatchers.IO) {

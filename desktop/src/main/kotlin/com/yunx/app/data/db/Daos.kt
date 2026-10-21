@@ -80,6 +80,8 @@ interface DownloadTaskDao {
     fun observeAll(): Flow<List<DownloadTaskEntity>>
     suspend fun insert(task: DownloadTaskEntity): Long
     suspend fun get(id: Long): DownloadTaskEntity?
+    /** 全量任务快照（启动清理缓存时需要知道哪些任务还活着） */
+    suspend fun listAll(): List<DownloadTaskEntity>
     suspend fun updateProgress(id: Long, status: Int, downloadedSize: Long, totalSize: Long)
     suspend fun updatePlan(id: Long, chunkCount: Int, totalSize: Long)
     suspend fun updateRequestHeaders(id: Long, encryptedHeaders: String)
@@ -90,6 +92,8 @@ interface DownloadTaskDao {
     suspend fun delete(id: Long)
     /** 记录外部下载引擎（Gopeed）的任务 ID；空串表示该任务回到内置下载器语义 */
     suspend fun updateEngineTaskId(id: Long, engineTaskId: String)
+    /** 记录实验性直写的临时文件路径与模式（空路径/0 = 非直写） */
+    suspend fun updateDirect(id: Long, partPath: String, mode: Int)
     /** 磁力任务完成时把占位显示名换成真正的种子名（种子名要等引擎解析出元数据才有） */
     suspend fun updateFileName(id: Long, name: String)
     /** 还在外部引擎里执行、需要轮询同步进度的任务（engineTaskId 非空且未完成/未失败） */

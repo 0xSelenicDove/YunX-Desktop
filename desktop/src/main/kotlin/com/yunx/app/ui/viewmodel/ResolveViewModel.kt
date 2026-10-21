@@ -124,6 +124,15 @@ class ResolveViewModel(
     var downloadLink by mutableStateOf<DownloadLink?>(null)
         private set
 
+    /** 本次单文件下载的保存目录（空串 = 跟随全局设置）；下载弹窗内可更改 */
+    var pendingSaveDir by mutableStateOf("")
+        private set
+
+    /** 下载弹窗内选择/更改保存目录 */
+    fun chooseDownloadDir(dir: String) {
+        pendingSaveDir = dir
+    }
+
     var downloadError by mutableStateOf<String?>(null)
     private set
 
@@ -489,10 +498,10 @@ class ResolveViewModel(
     }
 
     /** 批量下载：逐个取直链入队（选中文件夹时递归下载整个文件夹并保持目录结构，全部获取完再统一切到下载页） */
-    fun batchDownload() {
+    fun batchDownload(saveDir: String = "") {
         // GitHub 分支：无需凭证/取链 API，逐文件构造直链入队（代码文件夹递归收集 blob）
         if (currentPlatform == SharePlatform.GITHUB) {
-            batchGitHubDownload()
+            batchGitHubDownload(saveDir)
             return
         }
         val files = _selected.toList()
@@ -568,7 +577,12 @@ class ResolveViewModel(
                         }
                         linkResult.getOrNull()?.let { link ->
                             // 文件夹内文件用相对路径（保持目录结构）；根目录文件用取链返回的文件名
-                            enqueueDownload(link, quarkCred, if (relPath.isBlank()) link.filename else relPath)
+                            enqueueDownload(
+                                link,
+                                quarkCred,
+                                if (relPath.isBlank()) link.filename else relPath,
+                                saveDir = saveDir
+                            )
                             okCount++
                         }
                     }
@@ -1311,7 +1325,7 @@ class ResolveViewModel(
      * GitHub 批量下载：选中的叶子文件直接入队；代码文件夹（github:code:*）递归 getTree 收集 blob；
      * Releases 文件夹展开为资产；其余（repo 根/账号列表）跳过。全部直链先经镜像前缀转换。
      */
-    private fun batchGitHubDownload() {
+    private fun batchGitHubDownload(saveDir: String = "") {
         val selected = _selected.toList()
         viewModelScope.launch {
             isBatchWorking = true
@@ -1365,7 +1379,8 @@ class ResolveViewModel(
                             size = t.third,
                             platform = DownloadPlatform.GITHUB,
                             // 镜像挂掉时回退原始直连（t.first 为未镜像的 GitHub 直链）
-                            fallbackUrl = t.first
+                            fallbackUrl = t.first,
+                            saveDir = saveDir
                         )
                         okCount++
                     }
@@ -1652,6 +1667,7 @@ class ResolveViewModel(
     fun dismissDownloadDialog() {
         val link = downloadLink
         downloadLink = null
+        pendingSaveDir = ""
         // 弹窗被关闭（用户点关闭，未开始下载）：清理当前平台的云端临时转存，避免残留
         if (link?.cleanupDirFid != null) {
             viewModelScope.launch {
@@ -1670,7 +1686,9 @@ class ResolveViewModel(
     private suspend fun enqueueDownload(
         link: DownloadLink,
         credential: String,
-        fileName: String = link.filename
+        fileName: String = link.filename,
+        /** 任务级保存目录（空串 = 跟随全局设置） */
+        saveDir: String = ""
     ) {
         val isUC = currentPlatform == SharePlatform.UC
         val isXunlei = currentPlatform == SharePlatform.XUNLEI
@@ -1792,7 +1810,8 @@ class ResolveViewModel(
             fileName = fileName,
             headers = headers,
             size = link.size,
-            platform = platform
+            platform = platform,
+            saveDir = saveDir
         ) {
             // 下载完成（通过 onComplete 回调）：清理网盘临时转存目录；失败/取消不触发
             val dirFid = link.cleanupDirFid
@@ -1806,7 +1825,9 @@ class ResolveViewModel(
     fun startDownload(link: DownloadLink) {
         viewModelScope.launch {
             // 开始下载：先关闭弹窗（临时转存由下载完成 onComplete 清理，不在此时删）
+            val saveDir = pendingSaveDir
             downloadLink = null
+            pendingSaveDir = ""
             // GitHub 分支：无需网盘凭证，直链先经镜像前缀转换，带 size 和 platform=github 入队
             if (currentPlatform == SharePlatform.GITHUB) {
                 try {
@@ -1817,7 +1838,8 @@ class ResolveViewModel(
                         size = link.size,
                         platform = DownloadPlatform.GITHUB,
                         // 镜像挂掉时回退原始直连（link.downloadUrl 为未镜像的 GitHub 直链）
-                        fallbackUrl = link.downloadUrl
+                        fallbackUrl = link.downloadUrl,
+                        saveDir = saveDir
                     )
                     downloadStarted = true
                 } catch (e: Exception) {
@@ -1833,7 +1855,7 @@ class ResolveViewModel(
                 return@launch
             }
             try {
-                enqueueDownload(link, credential)
+                enqueueDownload(link, credential, saveDir = saveDir)
                 downloadStarted = true
             } catch (e: Exception) {
                 Log.e("ResolveVM", "startDownload failed: ${e.javaClass.simpleName}: ${e.message}", e)

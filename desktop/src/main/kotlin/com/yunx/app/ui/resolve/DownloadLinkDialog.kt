@@ -42,6 +42,10 @@ fun DownloadLinkDialog(
     link: DownloadLink,
     onDownload: () -> Unit,
     onDismiss: () -> Unit,
+    /** 本次下载的保存目录；null/空 = 跟随全局设置（沿用旧提示文案） */
+    saveDir: String? = null,
+    /** 提供后弹窗内显示「选择/更改保存目录」入口 */
+    onChangeSaveDir: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     FadeAlertDialog(
@@ -92,10 +96,21 @@ fun DownloadLinkDialog(
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "点击「开始下载」将分片多线程下载并保存到 Download 目录",
+                    text = when {
+                        !saveDir.isNullOrBlank() -> "保存到：$saveDir"
+                        onChangeSaveDir != null -> "将保存到默认下载目录（可点击下方更改）"
+                        else -> "点击「开始下载」将分片多线程下载并保存到 Download 目录"
+                    },
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
+                if (onChangeSaveDir != null) {
+                    TextButton(onClick = onChangeSaveDir) {
+                        Text(if (saveDir.isNullOrBlank()) "选择保存目录" else "更改保存目录")
+                    }
+                }
             }
         },
         confirmButton = {
