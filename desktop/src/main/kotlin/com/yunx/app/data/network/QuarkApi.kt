@@ -123,22 +123,6 @@ class QuarkApi(
         }
     }
 
-    /** 4.3 验证分享提取码 */
-    suspend fun verifySharePassword(shareId: String, passcode: String, cookie: String): Boolean =
-        withContext(Dispatchers.IO) {
-            val body = JSONObject()
-                .put("share_id", shareId)
-                .put("passcode", passcode)
-                .toString()
-            val request = postJson(QuarkConstants.SHARE_PASSWORD_URL, cookie, body)
-            runCatching {
-                client.newCall(request).execute().use { response ->
-                    val json = JSONObject(response.body?.string() ?: "{}")
-                    json.optInt("status") == 200
-                }
-            }.getOrDefault(false)
-        }
-
     /** 4.2 获取分享文件列表（sharepage/detail）
  *  官方字段：file_name / size / dir(boolean) / share_fid_token，
  *  与 kkdo.md 文档中的 fname/fsize/isdir/fid_token 不同，以抓包为准。

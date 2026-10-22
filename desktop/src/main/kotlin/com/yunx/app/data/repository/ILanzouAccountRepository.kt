@@ -62,16 +62,6 @@ class ILanzouAccountRepository(
         return token
     }
 
-    /** 重新登录（appToken 失效时由云盘 VM 调用）；成功返回新 token。 */
-    suspend fun relogin(): String? {
-        val acc = dao.getAccount() ?: return null
-        if (acc.password.isBlank()) return null
-        val uuid = acc.uuid.takeIf { isValidUuid(it) } ?: api.getUuid()
-        val token = api.login(acc.account, acc.password, uuid)
-        dao.upsert(acc.copy(appToken = token, uuid = uuid, updatedAt = System.currentTimeMillis()))
-        return token
-    }
-
     /** 取 userId（下载接口的 downloadId 需要它）：缺失时先请求账号信息并补库。 */
     suspend fun ensureUserId(): String? {
         val acc = dao.getAccount() ?: return null
