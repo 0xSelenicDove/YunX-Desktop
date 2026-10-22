@@ -85,11 +85,13 @@ import com.yunx.app.data.network.QuarkApi
 import com.yunx.app.data.network.TokenCheck
 import com.yunx.app.data.network.UCApi
 import com.yunx.app.data.network.XunleiApi
+import com.yunx.app.data.network.video.VideoPlatform
 import com.yunx.app.data.update.UpdateChecker
 import com.yunx.app.data.db.DownloadTaskEntity
 import com.yunx.app.data.prefs.SettingsRepository
 import com.yunx.app.ui.components.CloseChoice
 import com.yunx.app.ui.components.CloseConfirmDialog
+import com.yunx.app.util.CookieCleaner
 import com.yunx.app.util.DesktopActions
 import com.yunx.app.util.TrayManager
 import com.yunx.app.data.repository.AccountDirectory
@@ -127,8 +129,10 @@ import com.yunx.app.ui.login.Pan115LoginScreen
 import com.yunx.app.ui.login.Pan123LoginScreen
 import com.yunx.app.ui.login.QuarkLoginScreen
 import com.yunx.app.ui.login.UCLoginScreen
+import com.yunx.app.ui.login.VideoLoginScreen
 import com.yunx.app.ui.login.XunleiLoginScreen
 import com.yunx.app.ui.login.XunleiWebLoginScreen
+import com.yunx.app.ui.screens.VideoAccountSheet
 import com.yunx.app.ui.login.XunleiVerifyWebViewScreen
 import com.yunx.app.ui.navigation.MainTab
 import com.yunx.app.ui.screens.AboutScreen
@@ -166,6 +170,7 @@ import com.yunx.app.ui.viewmodel.Pan115AccountViewModel
 import com.yunx.app.ui.viewmodel.Pan115CloudViewModel
 import com.yunx.app.ui.viewmodel.Pan123AccountViewModel
 import com.yunx.app.ui.viewmodel.Pan123CloudViewModel
+import com.yunx.app.ui.viewmodel.VideoAccountViewModel
 import com.yunx.app.ui.viewmodel.QuarkAccountViewModel
 import com.yunx.app.ui.viewmodel.QuarkCloudViewModel
 import com.yunx.app.ui.viewmodel.ResolveViewModel
@@ -406,6 +411,14 @@ fun MainScreen(
     val multiAccountViewModel: MultiAccountViewModel = viewModel(
         factory = MultiAccountViewModel.Factory(accountDirectory)
     )
+
+    // 视频解析账号：各平台 Cookie 的登录态与多账号管理
+    val videoAccountViewModel: VideoAccountViewModel = viewModel(factory = VideoAccountViewModel.Factory())
+    val videoLoginState by videoAccountViewModel.loginState.collectAsState()
+    val videoAccounts by videoAccountViewModel.accounts.collectAsState()
+    var videoLoginPlatform by remember { mutableStateOf<VideoPlatform?>(null) }
+    var videoLoginNewAccount by remember { mutableStateOf(false) }
+    var videoManagePlatform by remember { mutableStateOf<VideoPlatform?>(null) }
 
     /**
      * 账号弹窗点「添加账号」：先清该平台的内嵌浏览器登录态（否则网页登录会自动登回旧账号），
@@ -692,6 +705,38 @@ fun MainScreen(
         return
     }
 
+    // 视频平台登录页：全屏覆盖（JCEF 网页登录；无网页登录页时自动落到粘贴 Cookie）
+    val pendingVideoLogin = videoLoginPlatform
+    if (pendingVideoLogin != null) {
+        VideoLoginScreen(
+            platform = pendingVideoLogin,
+            newAccount = videoLoginNewAccount,
+            viewModel = videoAccountViewModel,
+            onBack = { videoLoginPlatform = null },
+            onSaved = { videoLoginPlatform = null }
+        )
+        return
+    }
+
+    // 视频平台账号管理弹窗（多账号：设主账号 / 改备注 / 退出）
+    videoManagePlatform?.let { platform ->
+        VideoAccountSheet(
+            platform = platform,
+            accounts = videoAccounts.filter { it.platform == platform.name },
+            onSetPrimary = { id -> videoAccountViewModel.setPrimary(platform, id) },
+            onRename = { id, remark -> videoAccountViewModel.updateRemark(id, remark) },
+            onRemove = { id -> videoAccountViewModel.remove(id) },
+            onAddAccount = {
+                videoManagePlatform = null
+                videoLoginNewAccount = true
+                CookieCleaner.clearCookiesForDomains(listOf(platform.cookieDomain))
+                videoLoginPlatform = platform
+            },
+            onLogoutAll = { videoAccountViewModel.removeAll(platform) },
+            onDismiss = { videoManagePlatform = null }
+        )
+    }
+
     // 折叠标题状态提升到本层：跨页面共享
     val topAppBarState = rememberTopAppBarState()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(topAppBarState)
@@ -882,6 +927,15 @@ fun MainScreen(
                             lanzouCloudViewModel = lanzouCloudViewModel,
                             driveQuotaViewModel = driveQuotaViewModel,
                             multiAccount = multiAccountViewModel,
+                            videoLoginState = videoLoginState,
+                            videoAccounts = videoAccounts,
+                            onVideoLogin = { platform ->
+                                videoLoginNewAccount = false
+                                // 与网盘一致：先清该平台的 JCEF 登录态，避免登录页自动登回旧账号
+                                CookieCleaner.clearCookiesForDomains(listOf(platform.cookieDomain))
+                                videoLoginPlatform = platform
+                            },
+                            onVideoManage = { videoManagePlatform = it },
                             onAddAccount = onAddAccount,
                             onQuarkLogin = { showQuarkLogin = true },
                             onQuarkLogout = { viewModel.logout() },

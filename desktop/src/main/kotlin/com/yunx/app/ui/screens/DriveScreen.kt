@@ -63,9 +63,11 @@ import com.yunx.app.data.db.Pan115AccountEntity
 import com.yunx.app.data.db.Pan123AccountEntity
 import com.yunx.app.data.db.QuarkAccountEntity
 import com.yunx.app.data.db.UCAccountEntity
+import com.yunx.app.data.db.VideoAccountEntity
 import com.yunx.app.data.db.XunleiAccountEntity
 import com.yunx.app.data.download.DownloadPlatform
 import com.yunx.app.data.network.model.QuotaInfo
+import com.yunx.app.data.network.video.VideoPlatform
 import com.yunx.app.ui.components.FadeAlertDialog
 import com.yunx.app.ui.viewmodel.BaiduCloudViewModel
 import com.yunx.app.ui.viewmodel.C139CloudViewModel
@@ -166,6 +168,14 @@ fun DriveScreen(
     onGitHubClearToken: () -> Unit = {},
     /** 多账号：账号列表 / 设主账号 / 改备注 / 退出单个账号 */
     multiAccount: MultiAccountViewModel,
+    /** 视频解析：各平台登录态（platform → 当前账号） */
+    videoLoginState: Map<VideoPlatform, VideoAccountEntity> = emptyMap(),
+    /** 视频解析：全部平台账号（用于统计「共 N 个账号」） */
+    videoAccounts: List<VideoAccountEntity> = emptyList(),
+    /** 视频平台：打开登录页 */
+    onVideoLogin: (VideoPlatform) -> Unit = {},
+    /** 视频平台：打开账号管理弹窗 */
+    onVideoManage: (VideoPlatform) -> Unit = {},
     /** 「添加账号」：传入平台常量，由 MainScreen 清网页登录态并打开该平台登录页 */
     onAddAccount: (String) -> Unit = {},
     /** 「四宫格（两列）/ 列表」布局：由 MainScreen 顶部栏右上角按钮切换 */
@@ -561,6 +571,23 @@ fun DriveScreen(
                         account = github,
                         onClick = if (githubHasToken) onGitHubBrowseHome else onGitHubTokenClick,
                         onMoreClick = if (githubHasToken) { { showGitHubSheet = true } } else null
+                    )
+                }
+                // ---- 视频解析：各平台登录态与账号管理（与网盘区共用同一套卡片版式）----
+                item(key = "video_header", span = { GridItemSpan(maxLineSpan) }) {
+                    Text(
+                        text = "视频解析",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp, start = 4.dp)
+                    )
+                }
+                item(key = "video_section", span = { GridItemSpan(maxLineSpan) }) {
+                    VideoAccountSection(
+                        loginState = videoLoginState,
+                        accounts = videoAccounts,
+                        onLogin = onVideoLogin,
+                        onManage = onVideoManage
                     )
                 }
             }
