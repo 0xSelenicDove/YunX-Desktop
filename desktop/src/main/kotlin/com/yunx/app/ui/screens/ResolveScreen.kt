@@ -71,6 +71,7 @@ import com.mikepenz.markdown.m3.Markdown
 import com.yunx.app.data.db.BookmarkEntity
 import com.yunx.app.data.network.GitHubLinkParser
 import com.yunx.app.data.network.ShareLinkParser
+import com.yunx.app.data.network.video.VideoLinkParser
 import com.yunx.app.data.network.SharePlatform
 import com.yunx.app.data.network.model.ShareFile
 import com.yunx.app.ui.SnackbarController
@@ -122,6 +123,8 @@ fun ResolveScreen(
     homeShortcuts: List<BookmarkEntity> = emptyList(),
     /** 打开「收藏网盘链接」页管理收藏 */
     onManageShortcuts: () -> Unit = {},
+    /** 识别到视频平台链接时交给宿主的视频解析页（网盘解析器不认识这些域名） */
+    onVideoLink: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val state = viewModel.uiState
@@ -136,6 +139,11 @@ fun ResolveScreen(
     // 链接历史弹窗可见性（输入页 / 详情页都可触发，故挂载在父层）
     var showHistory by remember { mutableStateOf(false) }
 
+    // 视频链接优先分流：抖音/快手/B站等域名交给视频解析页，其余仍走网盘/GitHub 解析
+    val resolveLink: (String, String?) -> Unit = { text, code ->
+        if (VideoLinkParser.looksLikeVideoLink(text)) onVideoLink(text) else viewModel.startResolve(text, code)
+    }
+
     // 剪贴板分享链接提示状态：待提示的剪贴板文本 + 已忽略的文本
     // 用 rememberSaveable：切换 Tab 后返回仍保留（避免「忽略后切页回来又弹」）
     var clipboardSuggestion by rememberSaveable { mutableStateOf<String?>(null) }
@@ -149,7 +157,8 @@ fun ResolveScreen(
             text.isNotBlank() &&
             text != link &&
             text != ignoredClipboard &&
-            (ShareLinkParser.parse(text) != null || GitHubLinkParser.parse(text) != null)
+            (ShareLinkParser.parse(text) != null || GitHubLinkParser.parse(text) != null ||
+                VideoLinkParser.looksLikeVideoLink(text))
         ) {
             clipboardSuggestion = text
         }
@@ -347,10 +356,11 @@ fun ResolveScreen(
                         if (gh != null) {
                             viewModel.startGitHubResolve(gh)
                         } else {
-                            viewModel.startResolve(bookmark.link, bookmark.pwd.takeIf { it.isNotBlank() })
+                            resolveLink(bookmark.link, bookmark.pwd.takeIf { it.isNotBlank() })
                         }
                     },
-                    onManageShortcuts = onManageShortcuts
+                    onManageShortcuts = onManageShortcuts,
+                    onResolve = resolveLink
                 )
             }
         }
@@ -392,7 +402,7 @@ fun ResolveScreen(
                         if (githubParsed != null) {
                             viewModel.startGitHubResolve(githubParsed)
                         } else {
-                            viewModel.startResolve(suggestion, parsed?.pwd)
+                            resolveLink(suggestion, parsed?.pwd)
                         }
                     },
                     onDismiss = {
@@ -448,7 +458,7 @@ fun ResolveScreen(
             link = url
             pwd = historyPwd
             pwdEdited = true
-            viewModel.startResolve(url, historyPwd.ifBlank { null })
+            resolveLink(url, historyPwd.ifBlank { null })
         },
         onDelete = { viewModel.deleteLinkHistory(it) },
         onClear = { viewModel.clearLinkHistory() }
@@ -475,7 +485,9 @@ private fun ResolveInputContent(
     /** 点击快捷方式：直接解析该收藏链接 */
     onOpenShortcut: (BookmarkEntity) -> Unit,
     /** 打开收藏页管理快捷方式 */
-    onManageShortcuts: () -> Unit
+    onManageShortcuts: () -> Unit,
+    /** 解析入口：内部已做「视频链接 / 网盘链接」分流 */
+    onResolve: (String, String?) -> Unit
 ) {
     val isLoading = state is ResolveUiState.Loading
 
@@ -547,7 +559,7 @@ private fun ResolveInputContent(
                 if (github != null) {
                     viewModel.startGitHubResolve(github)
                 } else {
-                    viewModel.startResolve(link, pwd)
+                    onResolve(link, pwd)
                 }
             },
             modifier = Modifier

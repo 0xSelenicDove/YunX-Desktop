@@ -91,6 +91,7 @@ import com.yunx.app.data.db.DownloadTaskEntity
 import com.yunx.app.data.prefs.SettingsRepository
 import com.yunx.app.ui.components.CloseChoice
 import com.yunx.app.ui.components.CloseConfirmDialog
+import com.yunx.app.ui.SnackbarController
 import com.yunx.app.util.CookieCleaner
 import com.yunx.app.util.DesktopActions
 import com.yunx.app.util.TrayManager
@@ -147,6 +148,7 @@ import com.yunx.app.ui.screens.ExperimentalFeaturesScreen
 import com.yunx.app.ui.screens.StorageDirectoryScreen
 import com.yunx.app.ui.screens.OnboardingScreen
 import com.yunx.app.ui.screens.ResolveScreen
+import com.yunx.app.ui.screens.VideoResolveScreen
 import com.yunx.app.ui.screens.SettingsScreen
 import com.yunx.app.ui.screens.SupportScreen
 import com.yunx.app.ui.screens.ThemeScreen
@@ -171,6 +173,7 @@ import com.yunx.app.ui.viewmodel.Pan115CloudViewModel
 import com.yunx.app.ui.viewmodel.Pan123AccountViewModel
 import com.yunx.app.ui.viewmodel.Pan123CloudViewModel
 import com.yunx.app.ui.viewmodel.VideoAccountViewModel
+import com.yunx.app.ui.viewmodel.VideoResolveViewModel
 import com.yunx.app.ui.viewmodel.QuarkAccountViewModel
 import com.yunx.app.ui.viewmodel.QuarkCloudViewModel
 import com.yunx.app.ui.viewmodel.ResolveViewModel
@@ -419,6 +422,10 @@ fun MainScreen(
     var videoLoginPlatform by remember { mutableStateOf<VideoPlatform?>(null) }
     var videoLoginNewAccount by remember { mutableStateOf(false) }
     var videoManagePlatform by remember { mutableStateOf<VideoPlatform?>(null) }
+
+    // 视频解析页（全屏覆盖）：非空表示当前正在看某个视频链接的解析结果
+    val videoResolveViewModel: VideoResolveViewModel = viewModel(factory = VideoResolveViewModel.Factory())
+    var videoResolveText by remember { mutableStateOf<String?>(null) }
 
     /**
      * 账号弹窗点「添加账号」：先清该平台的内嵌浏览器登录态（否则网页登录会自动登回旧账号），
@@ -718,6 +725,23 @@ fun MainScreen(
         return
     }
 
+    // 视频解析结果页：全屏覆盖；返回时清空状态，避免下次打开看到上一次的结果
+    val pendingVideoText = videoResolveText
+    if (pendingVideoText != null) {
+        VideoResolveScreen(
+            viewModel = videoResolveViewModel,
+            onBack = {
+                videoResolveViewModel.reset()
+                videoResolveText = null
+            },
+            onDownload = { medias ->
+                // 下载链路（含 DASH 合轨 / 动图）在 Part 5 接入，这里先给出明确反馈
+                SnackbarController.show("已选择 ${medias.size} 项，下载链路将在下一步接入")
+            }
+        )
+        return
+    }
+
     // 视频平台账号管理弹窗（多账号：设主账号 / 改备注 / 退出）
     videoManagePlatform?.let { platform ->
         VideoAccountSheet(
@@ -900,7 +924,11 @@ fun MainScreen(
                             // 主页快捷方式（实验性功能，默认关闭）：复用收藏仓库数据源
                             homeShortcutsEnabled = homeShortcutsEnabled,
                             homeShortcuts = bookmarks,
-                            onManageShortcuts = { showBookmarks = true }
+                            onManageShortcuts = { showBookmarks = true },
+                            onVideoLink = { text ->
+                                videoResolveViewModel.resolve(text)
+                                videoResolveText = text
+                            }
                         )
                         MainTab.Drive -> DriveScreen(
                             scrollBehavior = scrollBehavior,
