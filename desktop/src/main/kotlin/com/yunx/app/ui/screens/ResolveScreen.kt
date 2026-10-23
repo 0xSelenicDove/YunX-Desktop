@@ -388,22 +388,31 @@ fun ResolveScreen(
             animatedSuggestion?.let { suggestion ->
                 val parsed = ShareLinkParser.parse(suggestion)
                 val githubParsed = GitHubLinkParser.parse(suggestion)
+                val videoParsed = VideoLinkParser.parse(suggestion)
                 ClipboardSuggestCard(
-                    platformName = when {
-                        githubParsed != null -> "GitHub"
-                        parsed != null -> platformLabel(parsed.platform)
-                        else -> "网盘"
+                    // 标题按识别结果给（视频链接此前一律显示成「网盘」，用户会误解）
+                    title = when {
+                        githubParsed != null -> "检测到 GitHub 分享链接"
+                        parsed != null -> "检测到 ${platformLabel(parsed.platform)}分享链接"
+                        videoParsed != null -> "检测到 ${videoParsed.platform.displayName} 视频链接"
+                        else -> "检测到分享链接"
                     },
                     onPaste = {
-                        link = suggestion
-                        pwd = parsed?.pwd.orEmpty()
-                        pwdEdited = true
                         clipboardSuggestion = null
-                        // GitHub 链接走 ViewModel 的 GitHub 解析入口（复用 ShareDetailScreen 框架）
-                        if (githubParsed != null) {
-                            viewModel.startGitHubResolve(githubParsed)
-                        } else {
-                            resolveLink(suggestion, parsed?.pwd)
+                        when {
+                            // GitHub 链接走 ViewModel 的 GitHub 解析入口（复用 ShareDetailScreen 框架）
+                            githubParsed != null -> {
+                                link = suggestion
+                                viewModel.startGitHubResolve(githubParsed)
+                            }
+                            // 视频链接直接进视频解析页，不污染网盘输入框
+                            videoParsed != null -> onVideoLink(suggestion)
+                            else -> {
+                                link = suggestion
+                                pwd = parsed?.pwd.orEmpty()
+                                pwdEdited = true
+                                resolveLink(suggestion, parsed?.pwd)
+                            }
                         }
                     },
                     onDismiss = {
@@ -753,7 +762,7 @@ private fun platformLabel(platform: SharePlatform): String = when (platform) {
 /** 剪贴板分享链接提示卡片：检测到分享链接时，询问是否粘贴解析 */
 @Composable
 private fun ClipboardSuggestCard(
-    platformName: String,
+    title: String,
     onPaste: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
@@ -775,7 +784,7 @@ private fun ClipboardSuggestCard(
                 Spacer(modifier = Modifier.width(10.dp))
                 Column {
                     Text(
-                        text = "检测到 $platformName 分享链接",
+                        text = title,
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onPrimaryContainer

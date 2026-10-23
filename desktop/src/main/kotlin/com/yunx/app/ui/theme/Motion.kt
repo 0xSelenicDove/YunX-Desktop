@@ -7,6 +7,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.IndicationNodeFactory
+import androidx.compose.foundation.interaction.InteractionSource
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.grid.LazyGridItemScope
 import androidx.compose.runtime.Composable
@@ -14,6 +16,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.drawscope.ContentDrawScope
+import androidx.compose.ui.node.DelegatableNode
+import androidx.compose.ui.node.DrawModifierNode
 import com.yunx.app.data.prefs.SettingsRepository
 
 /**
@@ -103,3 +108,24 @@ fun LazyItemScope.animateItemIfAllowed(): Modifier =
 @Composable
 fun LazyGridItemScope.animateItemIfAllowed(): Modifier =
     if (MotionPolicy.reducedMotion) Modifier else Modifier.animateItem()
+
+/**
+ * 空指示（无点击水波纹）：降级动效时由主题顶层提供，
+ * 让 `clickable` / `selectable` 这类基础组件直接失去涟漪，而不是逐个组件改。
+ * （Material3 的 Button / IconButton 走 `LocalRippleConfiguration`，见 Theme.kt）
+ */
+internal object NoIndication : IndicationNodeFactory {
+
+    override fun create(interactionSource: InteractionSource): DelegatableNode = NoIndicationNode()
+
+    override fun equals(other: Any?): Boolean = other === this
+
+    override fun hashCode(): Int = System.identityHashCode(this)
+}
+
+/** 只画内容、不画任何指示的 Modifier.Node */
+private class NoIndicationNode : Modifier.Node(), DrawModifierNode {
+    override fun ContentDrawScope.draw() {
+        drawContent()
+    }
+}

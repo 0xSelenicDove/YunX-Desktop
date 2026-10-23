@@ -31,6 +31,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.CreateNewFolder
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.DriveFileMove
@@ -286,7 +287,7 @@ fun ILanzouCloudScreen(
                                             showActionSheet = true
                                         }
                                     },
-                                    onMore = if (!viewModel.multiSelectMode && file.isdir) {
+                                    onMore = if (!viewModel.multiSelectMode) {
                                         {
                                             viewModel.openActions(file)
                                             showActionSheet = true
@@ -294,8 +295,11 @@ fun ILanzouCloudScreen(
                                     } else {
                                         null
                                     },
-                                    onLongClick = if (!viewModel.multiSelectMode) {
-                                        { viewModel.enterMultiSelect(file) }
+                                    onContextMenu = if (!viewModel.multiSelectMode) {
+                                        {
+                                            viewModel.openActions(file)
+                                            showActionSheet = true
+                                        }
                                     } else {
                                         null
                                     },
@@ -382,6 +386,10 @@ fun ILanzouCloudScreen(
             onDelete = {
                 showActionSheet = false
                 showDeleteConfirm = true
+            },
+            onMultiSelect = {
+                showActionSheet = false
+                viewModel.actionFile?.let { viewModel.enterMultiSelect(it) }
             },
             onDismiss = {
                 showActionSheet = false
@@ -482,6 +490,7 @@ private fun ILanzouActionSheet(
     onRename: () -> Unit,
     onMove: () -> Unit,
     onDelete: () -> Unit,
+    onMultiSelect: (() -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -558,6 +567,12 @@ private fun ILanzouActionSheet(
                 Icons.Outlined.Edit, "重命名", "修改文件名",
                 MaterialTheme.colorScheme.primary, onRename
             )
+            if (onMultiSelect != null) {
+                ILanzouActionItem(
+                    Icons.Outlined.CheckCircle, "多选", "勾选多个项目批量下载 / 分享 / 移动 / 删除",
+                    MaterialTheme.colorScheme.primary, onMultiSelect
+                )
+            }
             ILanzouActionItem(
                 Icons.Outlined.Delete, "删除", "删除该文件/文件夹",
                 MaterialTheme.colorScheme.error, onDelete

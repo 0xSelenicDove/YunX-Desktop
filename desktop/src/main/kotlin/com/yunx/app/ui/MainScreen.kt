@@ -433,20 +433,25 @@ fun MainScreen(
     /**
      * 账号弹窗点「添加账号」：先清该平台的内嵌浏览器登录态（否则网页登录会自动登回旧账号），
      * 再标记「这次登录落成新账号」，最后打开对应平台的登录页。
+     *
+     * ★ 清理是挂起等待的（不阻塞 EDT）：CEF 的 Cookie 回调靠 EDT 上的 timer 泵动，
+     *   之前同步等 3 秒会把泵堵死 → 「添加第二个账号时登录页打不开」。
      */
     val onAddAccount: (String) -> Unit = { platform ->
-        multiAccountViewModel.prepareAddAccount(platform)
-        when (platform) {
-            DownloadPlatform.QUARK -> { viewModel.beginAddAccount(); showQuarkLogin = true }
-            DownloadPlatform.UC -> { ucViewModel.beginAddAccount(); showUCLogin = true }
-            DownloadPlatform.XUNLEI -> { xunleiViewModel.beginAddAccount(); showXunleiLogin = true }
-            DownloadPlatform.BAIDU -> { baiduViewModel.beginAddAccount(); showBaiduLogin = true }
-            DownloadPlatform.C139 -> { c139ViewModel.beginAddAccount(); showC139Login = true }
-            DownloadPlatform.PAN123 -> { pan123ViewModel.beginAddAccount(); showPan123Login = true }
-            DownloadPlatform.PAN115 -> { pan115ViewModel.beginAddAccount(); showPan115Login = true }
-            DownloadPlatform.GUANGYA -> { guangyaViewModel.beginAddAccount(); showGuangYaLogin = true }
-            DownloadPlatform.ILANZOU -> { ilanzouViewModel.beginAddAccount(); showILanzouLogin = true }
-            DownloadPlatform.LANZOU -> { lanzouViewModel.beginAddAccount(); showLanzouLogin = true }
+        scope.launch {
+            multiAccountViewModel.prepareAddAccount(platform)
+            when (platform) {
+                DownloadPlatform.QUARK -> { viewModel.beginAddAccount(); showQuarkLogin = true }
+                DownloadPlatform.UC -> { ucViewModel.beginAddAccount(); showUCLogin = true }
+                DownloadPlatform.XUNLEI -> { xunleiViewModel.beginAddAccount(); showXunleiLogin = true }
+                DownloadPlatform.BAIDU -> { baiduViewModel.beginAddAccount(); showBaiduLogin = true }
+                DownloadPlatform.C139 -> { c139ViewModel.beginAddAccount(); showC139Login = true }
+                DownloadPlatform.PAN123 -> { pan123ViewModel.beginAddAccount(); showPan123Login = true }
+                DownloadPlatform.PAN115 -> { pan115ViewModel.beginAddAccount(); showPan115Login = true }
+                DownloadPlatform.GUANGYA -> { guangyaViewModel.beginAddAccount(); showGuangYaLogin = true }
+                DownloadPlatform.ILANZOU -> { ilanzouViewModel.beginAddAccount(); showILanzouLogin = true }
+                DownloadPlatform.LANZOU -> { lanzouViewModel.beginAddAccount(); showLanzouLogin = true }
+            }
         }
     }
     val quarkCloudViewModel: QuarkCloudViewModel = viewModel(
@@ -718,50 +723,60 @@ fun MainScreen(
     // 视频平台登录页：全屏覆盖（JCEF 网页登录；无网页登录页时自动落到粘贴 Cookie）
     val pendingVideoLogin = videoLoginPlatform
     if (pendingVideoLogin != null) {
-        VideoLoginScreen(
-            platform = pendingVideoLogin,
-            newAccount = videoLoginNewAccount,
-            viewModel = videoAccountViewModel,
-            onBack = { videoLoginPlatform = null },
-            onSaved = { videoLoginPlatform = null }
-        )
+        CompositionLocalProvider(
+            LocalContentColor provides MaterialTheme.colorScheme.onBackground
+        ) {
+            VideoLoginScreen(
+                platform = pendingVideoLogin,
+                newAccount = videoLoginNewAccount,
+                viewModel = videoAccountViewModel,
+                onBack = { videoLoginPlatform = null },
+                onSaved = { videoLoginPlatform = null }
+            )
+        }
         return
     }
 
     // 视频解析结果页：全屏覆盖；返回时清空状态，避免下次打开看到上一次的结果
     val pendingVideoText = videoResolveText
     if (pendingVideoText != null) {
-        VideoResolveScreen(
-            viewModel = videoResolveViewModel,
-            onBack = {
-                videoResolveViewModel.reset()
-                videoResolveText = null
-            },
-            onDownload = { medias ->
-                val result = (videoResolveViewModel.uiState as? VideoResolveUiState.Success)?.result
-                if (result != null && medias.isNotEmpty()) {
-                    scope.launch {
-                        medias.forEachIndexed { index, media ->
-                            downloadManager.enqueue(
-                                url = media.url,
-                                fileName = VideoDownloads.fileNameFor(result, media, index, medias.size),
-                                headers = media.headers,
-                                size = media.size,
-                                platform = DownloadPlatform.VIDEO,
-                                // DASH 音轨 / 动图资源随任务落库，由 DownloadManager 决定是否合轨或合成
-                                mergeAudioUrl = media.audioUrl,
-                                mergeAudioHeaders = media.audioHeaders,
-                                motionUrl = media.motionUrl
-                            )
+        // ★ 这是早返回分支，不经过根部 Box 里的 LocalContentColor —— M3 默认内容色是黑色，
+        //   深色模式下未显式指定颜色的文字（错误提示等）会看不见，这里补上主题内容色
+        CompositionLocalProvider(
+            LocalContentColor provides MaterialTheme.colorScheme.onBackground
+        ) {
+            VideoResolveScreen(
+                viewModel = videoResolveViewModel,
+                onBack = {
+                    videoResolveViewModel.reset()
+                    videoResolveText = null
+                },
+                onDownload = { medias ->
+                    val result = (videoResolveViewModel.uiState as? VideoResolveUiState.Success)?.result
+                    if (result != null && medias.isNotEmpty()) {
+                        scope.launch {
+                            medias.forEachIndexed { index, media ->
+                                downloadManager.enqueue(
+                                    url = media.url,
+                                    fileName = VideoDownloads.fileNameFor(result, media, index, medias.size),
+                                    headers = media.headers,
+                                    size = media.size,
+                                    platform = DownloadPlatform.VIDEO,
+                                    // DASH 音轨 / 动图资源随任务落库，由 DownloadManager 决定是否合轨或合成
+                                    mergeAudioUrl = media.audioUrl,
+                                    mergeAudioHeaders = media.audioHeaders,
+                                    motionUrl = media.motionUrl
+                                )
+                            }
+                            SnackbarController.show("已加入下载队列（${medias.size} 项）")
+                            currentTab = MainTab.Download
+                            videoResolveViewModel.reset()
+                            videoResolveText = null
                         }
-                        SnackbarController.show("已加入下载队列（${medias.size} 项）")
-                        currentTab = MainTab.Download
-                        videoResolveViewModel.reset()
-                        videoResolveText = null
                     }
                 }
-            }
-        )
+            )
+        }
         return
     }
 

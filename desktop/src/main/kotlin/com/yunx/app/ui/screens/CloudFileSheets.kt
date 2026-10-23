@@ -94,6 +94,7 @@ private val expireOptions = listOf(
 fun FileActionSheet(
     file: ShareFile,
     viewModel: QuarkCloudViewModel,
+    onMultiSelect: (() -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
     var step by remember { mutableStateOf(ActionStep.MENU) }
@@ -145,7 +146,13 @@ fun FileActionSheet(
                     step = ActionStep.MOVE
                 },
                 onRename = { step = ActionStep.RENAME },
-                onDelete = { step = ActionStep.DELETE }
+                onDelete = { step = ActionStep.DELETE },
+                onMultiSelect = onMultiSelect?.let { select ->
+                    {
+                        select()
+                        onDismiss()
+                    }
+                }
             )
 
             ActionStep.MOVE -> MoveStep(
@@ -202,7 +209,8 @@ private fun ActionMenu(
     onShare: () -> Unit,
     onMove: () -> Unit,
     onRename: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onMultiSelect: (() -> Unit)? = null
 ) {
     Column(
         modifier = Modifier
@@ -301,6 +309,15 @@ private fun ActionMenu(
             tint = MaterialTheme.colorScheme.primary,
             onClick = onRename
         )
+        if (onMultiSelect != null) {
+            ActionItem(
+                icon = Icons.Outlined.CheckCircle,
+                title = "多选",
+                desc = "勾选多个项目批量下载 / 分享 / 移动 / 删除",
+                tint = MaterialTheme.colorScheme.primary,
+                onClick = onMultiSelect
+            )
+        }
         ActionItem(
             icon = Icons.Outlined.Delete,
             title = "删除",

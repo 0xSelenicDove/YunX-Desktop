@@ -278,14 +278,14 @@ fun CloudDriveScreen(
                             viewModel.openActions(file)
                         }
                     },
-                    // 多选模式：隐藏行尾按钮；非多选时文件夹显示「更多」、全部可长按进入多选
-                    onMore = if (!viewModel.multiSelectMode && file.isdir) {
+                    // 多选模式：隐藏行尾按钮；非多选时全部显示「更多」，右键打开操作菜单
+                    onMore = if (!viewModel.multiSelectMode) {
                         { viewModel.openActions(file) }
                     } else {
                         null
                     },
-                    onLongClick = if (!viewModel.multiSelectMode) {
-                        { viewModel.enterMultiSelect(file) }
+                    onContextMenu = if (!viewModel.multiSelectMode) {
+                        { viewModel.openActions(file) }
                     } else {
                         null
                     },
@@ -344,6 +344,10 @@ fun CloudDriveScreen(
         FileActionSheet(
             file = file,
             viewModel = viewModel,
+            onMultiSelect = {
+                viewModel.dismissActions()
+                viewModel.enterMultiSelect(file)
+            },
             onDismiss = { viewModel.dismissActions() }
         )
     }

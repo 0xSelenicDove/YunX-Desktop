@@ -31,6 +31,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.CreateNewFolder
@@ -289,7 +290,7 @@ fun UCCoudScreen(
                                         showActionSheet = true
                                     }
                                 },
-                                onMore = if (!viewModel.multiSelectMode && file.isdir) {
+                                onMore = if (!viewModel.multiSelectMode) {
                                     {
                                         viewModel.openActions(file)
                                         showActionSheet = true
@@ -297,8 +298,11 @@ fun UCCoudScreen(
                                 } else {
                                     null
                                 },
-                                onLongClick = if (!viewModel.multiSelectMode) {
-                                    { viewModel.enterMultiSelect(file) }
+                                onContextMenu = if (!viewModel.multiSelectMode) {
+                                    {
+                                        viewModel.openActions(file)
+                                        showActionSheet = true
+                                    }
                                 } else {
                                     null
                                 },
@@ -395,6 +399,10 @@ fun UCCoudScreen(
             onDelete = {
                 showActionSheet = false
                 showDeleteConfirm = true
+            },
+            onMultiSelect = {
+                showActionSheet = false
+                viewModel.actionFile?.let { viewModel.enterMultiSelect(it) }
             },
             onDismiss = {
                 showActionSheet = false
@@ -509,6 +517,7 @@ private fun UCActionSheet(
     onMove: () -> Unit,
     onShare: () -> Unit,
     onDelete: () -> Unit,
+    onMultiSelect: (() -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -563,6 +572,9 @@ private fun UCActionSheet(
             UCActionItem(Icons.Outlined.Share, "分享", "生成分享链接（可设提取码/有效期）", MaterialTheme.colorScheme.primary, onShare)
             UCActionItem(Icons.Outlined.DriveFileMove, "移动到", "移动到网盘的其他目录", MaterialTheme.colorScheme.primary, onMove)
             UCActionItem(Icons.Outlined.Edit, "重命名", "修改文件名", MaterialTheme.colorScheme.primary, onRename)
+            if (onMultiSelect != null) {
+                UCActionItem(Icons.Outlined.CheckCircle, "多选", "勾选多个项目批量下载 / 分享 / 移动 / 删除", MaterialTheme.colorScheme.primary, onMultiSelect)
+            }
             UCActionItem(Icons.Outlined.Delete, "删除", "移入回收站", MaterialTheme.colorScheme.error, onDelete)
         }
     }

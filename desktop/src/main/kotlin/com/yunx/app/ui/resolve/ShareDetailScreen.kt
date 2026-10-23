@@ -1,10 +1,8 @@
 package com.yunx.app.ui.resolve
 
 import com.yunx.app.ui.theme.animateItemIfAllowed
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -58,8 +56,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.isSecondaryPressed
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -295,7 +297,7 @@ fun ShareDetailScreen(
                     } else {
                         null
                     },
-                    onLongClick = if (!viewModel.multiSelectMode) {
+                    onContextMenu = if (!viewModel.multiSelectMode) {
                         { viewModel.enterMultiSelect(file) }
                     } else {
                         null
@@ -646,7 +648,7 @@ internal fun CrumbBar(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 internal fun ShareFileRow(
     file: ShareFile,
@@ -655,8 +657,8 @@ internal fun ShareFileRow(
     onSave: (() -> Unit)? = null,
     /** 非空时行尾显示「更多」按钮（打开文件操作菜单） */
     onMore: (() -> Unit)? = null,
-    /** 长按进入多选（多选模式下为 null） */
-    onLongClick: (() -> Unit)? = null,
+    /** 右键 / 更多菜单（打开该行的操作菜单；多选模式下为 null） */
+    onContextMenu: (() -> Unit)? = null,
     /** 多选模式：是否选中 */
     selected: Boolean = false,
     /** 是否显示行首复选框（仅多选模式列表传 true；移动/转存等选择器不显示） */
@@ -669,10 +671,10 @@ internal fun ShareFileRow(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = onLongClick
-            ),
+            .clickable(onClick = onClick)
+            .onPointerEvent(PointerEventType.Press) { event ->
+                if (event.buttons.isSecondaryPressed) (onContextMenu ?: onMore)?.invoke()
+            },
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(
             containerColor = if (selected) {
@@ -751,6 +753,11 @@ internal fun ShareFileRow(
                     )
                 }
             }
+            Icon(
+                imageVector = Icons.Outlined.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.outline
+            )
             if (onMore != null) {
                 IconButton(onClick = onMore, modifier = Modifier.size(36.dp)) {
                     Icon(
@@ -761,11 +768,6 @@ internal fun ShareFileRow(
                     )
                 }
             }
-            Icon(
-                imageVector = Icons.Outlined.ChevronRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.outline
-            )
         }
     }
 }
