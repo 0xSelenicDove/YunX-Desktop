@@ -434,8 +434,18 @@
 | 支持页卡片几何（#184） | **未改**：桌面支持页布局本就与移动端不同（窗口宽、两列卡片），逐像素对齐没有收益 |
 | 清理 mp4parser 残留（#192） | **不适用**：桌面本轮才引入 mp4parser（#188 合轨需要） |
 | README 补 PC 说明（#196） | **改为桌面口径**：README / FEATURES 补「视频解析与预览」章节，不照搬移动端说明 |
-| 预览用 media3 `MergingMediaSource`（#183） | **不支持**：JavaFX 没有音轨合并能力，B站 DASH 在线预览不在本轮验收范围（下载后合轨可用） |
+| 预览用 media3 `MergingMediaSource`（#183） | **改路实现**：JavaFX 不能串两路流，B站 DASH 预览改为解析时另取 `fnval=1&platform=html5` 的单文件 mp4（`VideoMedia.previewUrl`）走回环代理播放；下载仍走高清分轨（详见 §9.15） |
 | 视频卡片拆分（#185 后半） | **已由 #183 移植覆盖**：桌面账号区一开始就按「平台卡片 + 账号列表」拆分 |
+
+### 9.15 B 站分轨合轨重写 / DASH 预览 / 动图格式（2026-10-23，非上游提交）
+
+三处实测缺陷的根因与处理（用户反馈：「合轨后时间轴损坏」「B 站无法在线预览」「动图选视频格式后缀仍是 JPG」）：
+
+| 现象 | 根因（实测） | 处理 |
+| --- | --- | --- |
+| 合轨成品时长只有 0.05 秒、进度条废掉 | `MovieCreator` 读分片 MP4 只认 `trun` 的逐样本时长，而 B 站把时长放在 `tfhd.default_sample_duration`（音频甚至只在 `mvex/trex`），也不读 `tfdt` → 重建的 `stts` 全是 0 | `DashMuxer` 改为**自解析** `moof`/`tfhd`/`tfdt`/`trun`/`trex`，再自写 `moov`+`mdat`（分块约 1 秒、双轨按时间交错、`elst` 原样保留、`stss` 用 `sample_depends_on`）。真实样本（BV1GJ411x7h7，avc1 480P + mp4a）：成品 212.31s / 5306 帧，与 ffmpeg 直转一致，解码无错 |
+| B 站结果页没有「预览」 | 预览按钮按 `audioUrl.isBlank()` 判断，分轨条目一律隐藏；且 `.m4s` 分片流 JavaFX 既播不了扩展名也串不了两路 | 解析 DASH 时**另取**一次 `fnval=1&platform=html5` 的单文件 mp4 放进 `VideoMedia.previewUrl`（预览专用，不下载整片），预览优先用它走回环代理；下载仍走高清分轨。DASH 视频轨同时改为**优先 AVC**（codecid=7），合轨产物兼容性最好 |
+| Live 图选「视频格式」后仍是 `.jpg` | 只替换了 `url`，`VideoMediaKind` 仍是 `IMAGE` → 文件名按图集规则回退 `.jpg` | 选视频时把 `kind` 改成 `VIDEO`（扩展名由直链后缀决定，没有就 `.mp4`），并清掉「动图」清晰度标签 |
 
 
 

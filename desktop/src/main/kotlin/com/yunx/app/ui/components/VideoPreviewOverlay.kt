@@ -77,6 +77,7 @@ import java.util.Locale
  * （`docs/PORT-PLAN-1.3.0.md` §9.2），这里 JFXPanel + 真实窗口天然满足。
  *
  * 播放源由 [prepareSource] 决定：
+ * - 有 [VideoMedia.previewUrl]（B 站 DASH 的单文件直链）→ 优先用它走 [LoopbackMediaProxy]；
  * - 单文件 MP4 → [LoopbackMediaProxy] 的 `127.0.0.1` 代理（注入 Referer/UA/Cookie + Range 透传）；
  * - HLS（m3u8）→ [HlsPreviewSession] 边下边重封装成本地增长文件，播放器读 `file:` URI
  *   （jfxmedia 不能播 m3u8，也不吃 HTTP 上的 fragmented MP4）。
@@ -501,12 +502,21 @@ private sealed class PreviewSource {
     }
 }
 
-/** 阻塞解析播放源（调用方在 IO 线程执行）；null 表示不可预览 */
+/**
+ * 阻塞解析播放源（调用方在 IO 线程执行）；null 表示不可预览
+ */
 private fun prepareSource(media: VideoMedia): PreviewSource? {
+    // 预览直链优先（哔哩哔哩 DASH：主直链是 .m4s 分轨，JavaFX 播不了，解析时另给了一份合好的 mp4）
+    if (media.previewUrl.isNotBlank()) {
+        val url = LoopbackMediaProxy.mediaUrl(media.previewUrl, media.headers) ?: return null
+        return PreviewSource.Direct(url)
+    }
     if (media.isHls) {
         val session = HlsPreviewSession.prepare(media.url, media.headers) ?: return null
         return PreviewSource.Hls(session)
     }
+    // 分轨流（音视频分离）没有预览直链时无法在线播放：JavaFX 只能吃单文件
+    if (media.audioUrl.isNotBlank()) return null
     val url = LoopbackMediaProxy.mediaUrl(media.url, media.headers) ?: return null
     return PreviewSource.Direct(url)
 }

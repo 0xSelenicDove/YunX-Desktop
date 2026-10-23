@@ -31,6 +31,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.yunx.app.data.network.video.VideoMedia
+import com.yunx.app.data.network.video.VideoMediaKind
 import com.yunx.app.ui.BackHandler
 import com.yunx.app.ui.components.ImageViewerOverlay
 import com.yunx.app.ui.components.VideoPreviewOverlay
@@ -159,22 +160,18 @@ private enum class MotionFormat { LIVE, STATIC_IMAGE, VIDEO }
  * 按用户选择的格式改造媒体：
  * - Live 图：保持 `${url}` + `motionUrl`，由 DownloadManager 合成；
  * - 静态图：丢掉动图资源，只下静图；
- * - 视频：把动图资源当主资源下载（扩展名跟随动图地址）。
+ * - 视频：把动图资源当**普通视频**下载 —— 类型必须是 `VIDEO`，否则文件名仍走图集规则
+ *   （动图直链多数没有扩展名，会回退成 `.jpg`）；扩展名由直链后缀决定，没有就给 `.mp4`。
  */
 private fun VideoMedia.withMotionFormat(format: MotionFormat): VideoMedia = when (format) {
     MotionFormat.LIVE -> this
     MotionFormat.STATIC_IMAGE -> copy(motionUrl = "")
-    MotionFormat.VIDEO -> {
-        val ext = motionUrl.substringAfterLast('.', "").take(4)
-            .ifBlank { "mp4" }
-            .substringBefore('?')
-        val base = fileName.substringBeforeLast('.', fileName)
-        copy(
-            url = motionUrl,
-            motionUrl = "",
-            fileName = if (base.isBlank()) fileName else "$base.$ext"
-        )
-    }
+    MotionFormat.VIDEO -> copy(
+        url = motionUrl,
+        kind = VideoMediaKind.VIDEO,
+        motionUrl = "",
+        quality = ""
+    )
 }
 
 /**

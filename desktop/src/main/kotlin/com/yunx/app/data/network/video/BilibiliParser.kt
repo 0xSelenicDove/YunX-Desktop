@@ -4,16 +4,15 @@ import com.yunx.app.data.download.DownloadPathPolicy
 import org.json.JSONObject
 
 /**
- * 哔哩哔哩视频解析：**单文件低清**（`fnval=1` 的 durl 直链）。
+ * 哔哩哔哩视频解析：登录后走 DASH 高清（下载时合轨），未登录退回单文件（`fnval=1` 的 durl 直链）。
  *
  * 数据来源（都是公开的 web 接口，未登录也能用）：
  * 1. `x/web-interface/view` 取 bvid/aid/cid/标题/作者/封面/时长；
- * 2. `x/player/playurl?fnval=1&platform=html5&high_quality=1` 取**单文件** `durl[0]`。
- *
- * ★ 为什么刻意用 `fnval=1` 而不是默认的 DASH：DASH 是音视频**分离**的两路流，需要 ffmpeg 或
- *   自研 mux 才能合并成一个可播放文件，Android 侧没有这个能力（参考实现靠 ffmpeg）。
- *   `fnval=1` 换来的是「能直接下载播放」的单个 mp4/flv，代价是清晰度偏低（未登录尤其明显）。
- *   DASH 合并留作 TODO：等有了 Android 侧的 mux 方案再开高清。
+ * 2. 已登录：`x/player/playurl?fnval=4048` 取 **DASH 分轨**（视频轨 + 音轨，优先 AVC），
+ *    下载后由 `DashMuxer` 合轨；同时再取一次 `fnval=1&platform=html5` 的**单文件 mp4**
+ *    只用于在线预览（分轨流 JavaFX 播不了）；
+ * 3. 未登录 / DASH 不可用：`x/player/playurl?fnval=1&platform=html5&high_quality=1`
+ *    取单文件 `durl[0]`，能直接下载播放，代价是清晰度偏低。
  *
  * ★ 已知限制：
  * - 只解析**第一个分P**（多 P 视频后续可按 `pages[]` 展开）；
@@ -27,6 +26,9 @@ object BilibiliParser : VideoParser {
     private const val VIEW_URL = "https://api.bilibili.com/x/web-interface/view"
     private const val PLAY_URL = "https://api.bilibili.com/x/player/playurl"
     private const val NAV_URL = "https://api.bilibili.com/x/web-interface/nav"
+
+    /** DASH 视频流的编码编号：7 = AVC(H.264)，12 = HEVC，13 = AV1 */
+    private const val CODEC_AVC = 7
 
     /** 页面/接口请求头：Referer 必须是 bilibili.com，否则会被风控挡 */
     private fun apiHeaders(cookie: String): Map<String, String> = buildMap {
@@ -100,9 +102,12 @@ object BilibiliParser : VideoParser {
                         kind = VideoMediaKind.VIDEO,
                         fileName = "$fileBase.mp4",
                         headers = mediaHeaders(cookie),
-                        quality = "${qualityLabel(dash.quality)}（分轨，下载后合轨）",
+                        // quality 会拼进下载文件名（`标题_1080P.mp4`），别带额外说明文字
+                        quality = qualityLabel(dash.quality),
                         audioUrl = dash.audioUrl,
-                        audioHeaders = mediaHeaders(cookie)
+                        audioHeaders = mediaHeaders(cookie),
+                        // 分轨流不能直接预览（.m4s + 两路），另取一份单文件直链给预览用
+                        previewUrl = mergedPreviewUrl(bvid, cid, cookie)
                     )
                 )
             }
@@ -180,10 +185,15 @@ object BilibiliParser : VideoParser {
         val videos = dash.optJSONArray("video") ?: return null
         val audios = dash.optJSONArray("audio") ?: return null
 
-        // 数组通常已按清晰度降序，但显式比较更稳（不同端返回顺序不一致过）
-        val bestVideo = (0 until videos.length())
+        // 数组通常已按清晰度降序，但显式比较更稳（不同端返回顺序不一致过）。
+        // ★ 优先 AVC（codecid=7）：同样的清晰度下 H.264 兼容性最好，合轨后的 mp4 在系统播放器/
+        //   JavaFX 里都能直接播；HEVC（12）/AV1（13）只作为兜底。
+        val avcOnly = (0 until videos.length())
             .mapNotNull { videos.optJSONObject(it) }
-            .maxByOrNull { it.optInt("id") } ?: return null
+            .filter { it.optInt("codecid") == CODEC_AVC }
+        val bestVideo = (avcOnly.ifEmpty {
+            (0 until videos.length()).mapNotNull { videos.optJSONObject(it) }
+        }).maxByOrNull { it.optInt("id") } ?: return null
         val bestAudio = (0 until audios.length())
             .mapNotNull { audios.optJSONObject(it) }
             .maxByOrNull { it.optInt("id") } ?: return null
@@ -198,6 +208,26 @@ object BilibiliParser : VideoParser {
         (optString("baseUrl").takeIf { it.isNotBlank() } ?: optString("base_url"))
             .takeIf { it.isNotBlank() && it != "null" }
             ?.let { httpsUrl(it) }
+
+    /**
+     * 取「单文件 mp4」直链专供**在线预览**（DASH 分轨流没法直接喂给 JavaFX）。
+     *
+     * 走 `fnval=1&platform=html5`：拿到的是音视频已合好的普通 mp4（H.264 + AAC），
+     * 清晰度通常比 DASH 低一档，但预览够用、且不下载整片。失败返回空串（预览端会退回主直链，
+     * 看到的是「无法在线预览」而不是崩溃）。
+     */
+    private suspend fun mergedPreviewUrl(bvid: String, cid: Long, cookie: String): String {
+        val json = runCatching {
+            VideoHttp.getJson(
+                "$PLAY_URL?bvid=$bvid&cid=$cid&qn=80&fnval=1&fnver=0&fourk=1&platform=html5&high_quality=1",
+                apiHeaders(cookie),
+                "B站取预览直链"
+            )
+        }.getOrNull() ?: return ""
+        val url = json.optJSONObject("data")?.optJSONArray("durl")
+            ?.optJSONObject(0)?.optString("url").orEmpty()
+        return httpsUrl(url)
+    }
 
     /** B站清晰度编号 → 展示文案（只列常见的几档，其余原样显示编号） */
     private fun qualityLabel(qn: Int): String = when (qn) {

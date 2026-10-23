@@ -408,7 +408,7 @@ private fun CellBadge(text: String, modifier: Modifier = Modifier) {
 
 /**
  * 单条媒体行：序号 + 类型 + 清晰度 + 大小，右侧「预览」（可播时）与「下载」。
- * 与上游的差异：混合结果里的图片仍可点缩略图放大；DASH 分轨（audioUrl 非空）暂不可预览。
+ * 与上游的差异：混合结果里的图片仍可点缩略图放大；DASH 分轨靠 [VideoMedia.previewUrl] 预览。
  */
 @Composable
 private fun MediaRow(
@@ -502,11 +502,14 @@ private fun MediaRow(
 }
 
 /**
- * 能否在线预览：单文件视频直链（含 HLS）可以；DASH 分轨（[VideoMedia.audioUrl] 非空）
- * 需要合轨流式播放，不在 M6 范围（见 PORT-PLAN §3.3）。
+ * 能否在线预览：
+ * - 单文件视频直链（含 HLS）可以；
+ * - DASH 分轨（[VideoMedia.audioUrl] 非空）只有在解析时另给了单文件预览直链
+ *   （[VideoMedia.previewUrl]，B 站就是这么做的）时才可预览 —— 否则 JavaFX 无法把两路流串起来。
  */
 private fun VideoMedia.isPreviewable(): Boolean =
-    kind == VideoMediaKind.VIDEO && url.isNotBlank() && audioUrl.isBlank()
+    kind == VideoMediaKind.VIDEO && url.isNotBlank() &&
+        (audioUrl.isBlank() || previewUrl.isNotBlank())
 
 /** 媒体列表为空（通常意味着解析没拿到直链）时的占位说明 */
 @Composable

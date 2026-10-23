@@ -42,7 +42,18 @@ data class VideoMedia(
      * 媒体类型保持 [VideoMediaKind.IMAGE]，所以结果页的网格/多选/批量下载都不受影响；
      * 空 = 普通静图。
      */
-    val motionUrl: String = ""
+    val motionUrl: String = "",
+    /**
+     * **在线预览专用**的直链（可空）：与 [url] 是同一份内容，但封装/轨道是预览器能直接吃的。
+     *
+     * 典型场景是哔哩哔哩 DASH：下载走「视频轨 + 音轨」两路 `.m4s`（fragmented MP4），
+     * 而 JavaFX `MediaView` 既播不了 `.m4s` 扩展名、也不能串两路流 —— 所以解析时顺带
+     * 取一次 `fnval=1` 的单文件 mp4（音视频已合好）放进这里，预览直接用它；
+     * 下载仍然走高清的分轨，预览不牺牲下载质量。
+     *
+     * 空 = 用 [url] 本身预览。
+     */
+    val previewUrl: String = ""
 )
 
 /**
