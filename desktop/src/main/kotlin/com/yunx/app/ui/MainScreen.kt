@@ -702,6 +702,29 @@ fun MainScreen(
         return
     }
 
+    // 迅雷登录页（App 通道：账号密码 / 短信 / 网页登录入口）
+    // ★ 与夸克 / UC 一致改成「早期返回」渲染：覆盖层（PageOverlay）在某些状态下不出现时
+    //   用户看到的就是「点了添加账号没有任何页面」；早期返回没有这层依赖。
+    if (showXunleiLogin) {
+        XunleiLoginScreen(
+            viewModel = xunleiViewModel,
+            onBack = { xunleiViewModel.cancelAddAccount(); showXunleiLogin = false },
+            onSaved = { showXunleiLogin = false },
+            onVerify = { url, deviceId ->
+                xunleiVerifyUrl = url
+                xunleiVerifyDeviceId = deviceId
+                showXunleiLogin = false
+                showXunleiVerify = true
+            },
+            onWebLogin = {
+                // 网页登录：另一套接口，不受 App 通道风控影响，收不到短信时的兜底
+                showXunleiLogin = false
+                showXunleiWebLogin = true
+            }
+        )
+        return
+    }
+
     // 百度登录页：全屏覆盖（粘贴 Cookie 登录）
     if (showBaiduLogin) {
         BaiduLoginScreen(
@@ -1220,25 +1243,6 @@ fun MainScreen(
         // ★ 为什么只有这 7 个页面在这里：内嵌 Chromium 的登录页（夸克 / UC / 百度 / 139 / 115 / 迅雷网页登录）
         //   用的是 SwingPanel（真实 AWT 子控件），Compose 侧无法对它做透明度与位移动画，
         //   强行套过渡会出现「页面淡入但浏览器区域瞬间出现」的破绽，所以那几个页面保持原样（仍是早期返回）。
-        PageOverlay(visible = showXunleiLogin) {
-            XunleiLoginScreen(
-                viewModel = xunleiViewModel,
-                onBack = { xunleiViewModel.cancelAddAccount(); showXunleiLogin = false },
-                onSaved = { showXunleiLogin = false },
-                onVerify = { url, deviceId ->
-                    xunleiVerifyUrl = url
-                    xunleiVerifyDeviceId = deviceId
-                    showXunleiLogin = false
-                    showXunleiVerify = true
-                },
-                onWebLogin = {
-                    // 网页登录：另一套接口，不受 App 通道风控影响，收不到短信时的兜底
-                    showXunleiLogin = false
-                    showXunleiWebLogin = true
-                }
-            )
-        }
-
         // 迅雷验证页（桌面版：系统浏览器承载验证）；放在登录页之后 → 交叉切换时它绘制在上层
         PageOverlay(visible = showXunleiVerify) {
             XunleiVerifyWebViewScreen(
