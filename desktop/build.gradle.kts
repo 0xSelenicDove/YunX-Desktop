@@ -27,6 +27,14 @@ dependencies {
     // 主题种子色（material-color-utilities 无公开仓库坐标；从 material 1.14.0 AAR 解包 classes.jar 本地引入）
     implementation(files("libs/material-color-utilities-1.0.0.jar"))
 
+    // JavaFX MediaView 播放器（M6）：JFXPanel 经 SwingPanel 嵌入 Compose。
+    // 版本跟随 jvmToolchain(17)；发布目标只有 Windows，直接用 :win classifier（jar 内含原生库，
+    // 首次运行由 JavaFX 自动解到用户目录缓存，jpackage 无需额外处理）
+    implementation("org.openjfx:javafx-base:17.0.13:win")
+    implementation("org.openjfx:javafx-graphics:17.0.13:win")
+    implementation("org.openjfx:javafx-media:17.0.13:win")
+    implementation("org.openjfx:javafx-swing:17.0.13:win")
+
     // GFM Markdown 渲染（README / 更新说明）。注意：必须停留在 0.33.x ——
     // 0.34.0 起改用 Compose 1.8+ 的 BasicText 签名（含 TextAutoSize），与项目锁定的
     // Compose Multiplatform 1.7.3 二进制不兼容，会在运行时抛 NoSuchMethodError

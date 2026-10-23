@@ -26,6 +26,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.BrokenImage
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.PlayCircleOutline
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -85,6 +86,8 @@ internal fun VideoResultSection(
     onDownloadMedia: (VideoMedia) -> Unit,
     /** 点击图片：把直链交给宿主放大查看 */
     onPreviewImage: (String, Map<String, String>) -> Unit,
+    /** 点击「预览」：把视频媒体交给宿主打开播放器 */
+    onPreviewVideo: (VideoMedia) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -170,7 +173,8 @@ internal fun VideoResultSection(
                             index = index,
                             media = media,
                             onDownload = { onDownloadMedia(media) },
-                            onPreviewImage = onPreviewImage
+                            onPreviewImage = onPreviewImage,
+                            onPreviewVideo = { onPreviewVideo(media) }
                         )
                     }
                 }
@@ -403,15 +407,16 @@ private fun CellBadge(text: String, modifier: Modifier = Modifier) {
 }
 
 /**
- * 单条媒体行：序号 + 类型 + 清晰度 + 大小，右侧「下载」。
- * 与上游的差异：没有「预览」入口（播放器留到后续里程碑）；混合结果里的图片仍可点缩略图放大。
+ * 单条媒体行：序号 + 类型 + 清晰度 + 大小，右侧「预览」（可播时）与「下载」。
+ * 与上游的差异：混合结果里的图片仍可点缩略图放大；DASH 分轨（audioUrl 非空）暂不可预览。
  */
 @Composable
 private fun MediaRow(
     index: Int,
     media: VideoMedia,
     onDownload: () -> Unit,
-    onPreviewImage: (String, Map<String, String>) -> Unit
+    onPreviewImage: (String, Map<String, String>) -> Unit,
+    onPreviewVideo: () -> Unit
 ) {
     val subtitle = buildList {
         if (media.quality.isNotBlank()) add(media.quality)
@@ -472,6 +477,17 @@ private fun MediaRow(
                     )
                 }
             }
+            if (media.isPreviewable()) {
+                TextButton(onClick = onPreviewVideo) {
+                    Icon(
+                        imageVector = Icons.Outlined.PlayCircleOutline,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("预览")
+                }
+            }
             TextButton(onClick = onDownload) {
                 Icon(
                     imageVector = Icons.Outlined.Download,
@@ -484,6 +500,13 @@ private fun MediaRow(
         }
     }
 }
+
+/**
+ * 能否在线预览：单文件视频直链（含 HLS）可以；DASH 分轨（[VideoMedia.audioUrl] 非空）
+ * 需要合轨流式播放，不在 M6 范围（见 PORT-PLAN §3.3）。
+ */
+private fun VideoMedia.isPreviewable(): Boolean =
+    kind == VideoMediaKind.VIDEO && url.isNotBlank() && audioUrl.isBlank()
 
 /** 媒体列表为空（通常意味着解析没拿到直链）时的占位说明 */
 @Composable

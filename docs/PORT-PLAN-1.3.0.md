@@ -58,7 +58,7 @@
 
 - 体积：javafx-base/graphics/media + Windows 原生约 **15~25 MB**（待实测），明显小于 VLCJ（40~60 MB）
 - 能力：官方文档支持 **H.264/AVC + AAC**（MP4），另有 MP3；**不支持 HEVC**
-- 集成：`JFXPanel` → Compose `SwingPanel`；`Platform.setImplicitExit(false)`，`MediaView` 自带播放/暂停/进度/音量，全屏与倍速由外层 Compose 控件补充
+- 集成：`JFXPanel` → Compose `SwingPanel`；`Platform.setImplicitExit(false)`，`MediaView` 自带播放/暂停/进度/音量，全屏与倍速由外层 Compose 控件补充。**MediaView 必须挂进可见窗口的 Scene**（裸 MediaPlayer preroll 会随机死锁，M1.5 探针实测）
 - 网络：JavaFX `Media` 不支持自定义请求头，统一经 **本地回环代理**（见 3.2）提供 `Referer` / `User-Agent` / `Cookie`
 
 排除项：
@@ -96,10 +96,20 @@
 
 AcFun 只提供 HLS。已确认：先下载再播放等价于普通下载，预览就失去意义，所以 HLS 必须能边下边播。两条路径：
 
-1. **首选（但预期不高）：JavaFX 原生 HLS**
-   `javafx.scene.media` 官方能力表列有 HLS（MP2T 容器，H.264/AAC），但该能力有平台限定；JavaFX Media 的 HLS 实现历来薄弱，**Windows 上大概率不能直接吃 `.m3u8`**。仍需实测确认（M6 前置探针，做法与本次 CEF 探针相同）：命中则零成本，否则按路径 2 排期。
-2. **兜底：自研渐进式重封装代理**
-   本地回环代理按顺序拉取 TS 分片，解析 TS 包抽出 H.264/AAC 基本流，边转封装为 fragmented MP4 边输出给 JavaFX 播放。工作量约 600~900 行、零第三方依赖，复杂度集中在 TS 解析与 PTS/DTS 时间轴重建。仅在路径 1 失败时启用。
+1. ~~首选：JavaFX 原生 HLS~~ **已实测否决**（2026-10-23 M1.5 探针）：JavaFX 17 / Windows 播
+   `.m3u8` 直接报 `MediaException: Could not create player!`（Apple 官方 bipbop 测试流，
+   H.264 TS + AAC，与 AcFun 同容器族；可见 MediaView 环境下复测两次结论一致）。
+2. **启用（实测后唯一路径）：自研渐进式重封装**
+   把 TS 分片解析成 H.264/AAC 基本流，重封装为 fragmented MP4，**边下载边写本地临时文件**，
+   播放器直接读这个 `file:` URI（文件持续变长，播放头始终落后于写入位置）。
+   工作量约 900 行、零第三方依赖，复杂度集中在 TS 解析与 PTS/DTS 时间轴重建。
+
+   **为什么不是回环 HTTP**（2026-10-23 M6 实测，见 9.2 第 2 条）：同一个 fMP4 用 `file:` 立刻能播，
+   走 `127.0.0.1` HTTP（chunked 或带 Content-Length 都试过）一律 `TIMEOUT`——jfxmedia 的 HTTP
+   路径不吃 fragmented MP4。回环代理因此只保留单文件 MP4（`/media` + Range 透传）。
+
+   实现落在 `data/preview/`：`LoopbackMediaProxy`（MP4 代理）、`TsSegmentParser`、`Fmp4Builder`、
+   `HlsFmp4Streamer`（时间轴归一 + 分段输出）、`HlsPreviewSession`（临时文件 + 续写线程）。
 
 明确不采用：内置 ffmpeg（约 +80 MB）、先整包下载再播放。
 
@@ -229,7 +239,7 @@ CREATE TABLE IF NOT EXISTS video_account (
 | **M3 账号与登录** | 账号区、通用视频登录页（JCEF）、Pixiv 网页登录 + 手动 Cookie 兜底 | B站/小红书/Pixiv 能读到 Cookie 并成功解析；Pixiv 两种方式都能存 |
 | **M4 解析 UI** | 解析页入口、结果页、平台 Logo、批量选择 | 粘贴链接可识别平台并落到结果页；图集可浏览 |
 | **M5 下载链路** | 单文件 / HLS（AcFun）/ 动图合成 / DASH 合轨（A2） | 各形态下载后文件可正常播放；B站合轨产物音画同步；动图在系统看图器里是合法 JPEG |
-| **M6 播放器** | 本地代理 + JavaFX MediaView + 全屏/倍速；按 M1.5 的 HLS 探针结果选择路径 1/2 | MP4（含 B站 durl）在线播；AcFun m3u8 必须能在线边下边播（不允许先下后播）；拖动、全屏正常。**B站 DASH 不在本里程碑验收范围** |
+| **M6 播放器** | 本地代理（MP4）+ TS→fMP4 重封装落增长文件（HLS）+ JavaFX MediaView + 全屏/倍速 | MP4（含 B站 durl）在线播；AcFun m3u8 必须能在线边下边播（不允许先下后播）；拖动、全屏正常。**B站 DASH 不在本里程碑验收范围** |
 | **M7 细节与收尾** | #185 图标尺寸、#189 小红书原图、#204 弹窗整行可点、现有高频动画接入 3.7、外观页「减少动画」开关、文案、1.3.0 | 与上游视觉一致；软件渲染下无装饰动画残留；开关切换后动效立即变化并持久化；`version.txt` 1.3.0；`UPSTREAM-DIFF §9.14` 记录取舍 |
 
 依赖顺序：M1 → **M1.5（两条探针并行，可与 M2 同时进行）** → M2 → M3 → M4 → M5 → M6，M7 可穿插。探针结论出来后再排 M5/M6 的具体实现，避免后期返工。
@@ -275,13 +285,27 @@ CREATE TABLE IF NOT EXISTS video_account (
 | Pixiv 网页登录 | **本轮实施**，同时保留手动填 Cookie 兜底 |
 | 抖音隐藏 WebView | 用 JCEF 隐藏浏览器实现，仅作 SSR 失败时的兜底 |
 
-### 9.2 待实测（动工前 / 里程碑内）
+### 9.2 已实测（M1.5 + M6 探针，2026-10-23）
 
-1. **JavaFX 17 在 Windows 上能否直接播 `.m3u8`** —— 预期**大概率不支持**，按路径 2（自研 TS→fMP4 代理）准备；万一支持则省掉这部分工作
-2. **mp4parser 能否正确处理 B站 fMP4 样本** —— 决定 DASH 合轨是否需要换实现
-3. **JavaFX Media 对微博 `.mov` 的支持** —— 不支持则在下载链路上重封装为 MP4；重封装直接复用 A2 引入的 mp4parser，不新增依赖
+1. ~~JavaFX 17 在 Windows 上能否直接播 `.m3u8`~~ → **不能**。`MediaException: Could not create player!`，按 3.3.1 路径 2 实施
+2. ~~TS→fMP4 重封装的产物怎么喂给 jfxmedia~~ → **只能走 `file:`**。同一份 fMP4：
+   `file:` 播放正常；回环 HTTP（chunked / 带 Content-Length 均试）一律 90s 无 READY。
+   定案：`HlsPreviewSession` 边下边写本地临时文件，播放器读仍在变长的文件（实测播放头 0→8s 正常推进）
+3. ~~mp4parser 能否正确处理 B站 fMP4 样本~~ → **能**。真实样本（BV1GJ411x7h7，avc1 360p + mp4a 分轨）合轨通过：双轨齐全、时长 212.24s/212.39s（drift 0.154s，AAC priming 正常范围），产物经回环 HTTP 喂给 JavaFX 可正常播放
+4. **JavaFX Media 对微博 `.mov` 的支持** —— 不支持则在下载链路上重封装为 MP4；重封装直接复用 A2 引入的 mp4parser，不新增依赖（`DashMuxer.remuxToMp4` 已备）
 
-第 1、2 条由 **M1.5 并行探针**清掉，结论回填本文档后再排 M5/M6。
+M6 重封装实现自测（Apple bipbop 4x3，H.264 + AAC 复用 TS，181 分片 / 30 分钟）：
+
+- 音画时长 1596.265s vs 1596.279s（差 14ms）；`mvhd/mdhd/mehd` 写真实时长后，jfxmedia 报 `durationSec=1800.0` 与实际一致
+- 音频必须**跨 PES 连续扫 ADTS**：PES 负载常从帧中间开始，按帧边界重置会丢掉约 90% 的音频帧
+- Compose 集成：`SwingPanel(JFXPanel)` 里 Scene 尺寸不能直接 `setWidth`（包私有），需按面板尺寸重建 Scene 才不出现右侧留白
+
+探针附带发现（实现约束）：
+
+- **JavaFX 播放必须把 MediaView 挂进可见窗口的 Scene**：无 Scene 的裸 `MediaPlayer` preroll 会随机死锁（无 READY 无 ERROR，45s 超时）。正式实现 JFXPanel + Scene + MediaView 天然满足
+- jfxmedia 读 mp4parser 产物的时长为 `Infinity`（mvhd/tkhd duration 兼容性怪癖）：不影响 M6（DASH 预览不在范围；外部系统播放器读时长正常），如需消除可在 DashMuxer 显式写 Movie duration，列为后续可选优化
+- 本机工作目录含非 ASCII 字符时 `gradle test` 的 worker classpath 乱码（测试类 ClassNotFound），探针改走 JavaExec；CI（ASCII 路径）不受影响
+- 探针顺带修复了失效的 `SecureAccountDaosTest`（多账号接口扩展后 fake 未同步，补了缺失的 override）
 
 ---
 

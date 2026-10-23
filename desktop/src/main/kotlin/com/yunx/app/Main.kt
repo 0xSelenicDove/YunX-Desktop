@@ -119,16 +119,20 @@ fun main(args: Array<String>) {
         // 把可见性回滚，导致窗口永远不显示（进程存活但无窗口）。
         val splashMode = System.getenv("YUNXPC_SPLASH") == "1"
 
+        // 窗口状态提升为可共享状态：视频预览的全屏开关（PreviewFullscreen）需要它
+        val windowState = remember { WindowState(size = DpSize(1100.dp, 760.dp)) }
+
         Window(
             onCloseRequest = {
                 if (!suppressCloseRequest) closeRequested = true
             },
             title = "云析 YunX-Desktop",
-            state = WindowState(size = DpSize(1100.dp, 760.dp)),
+            state = windowState,
             icon = remember { loadWindowIcon() },
         ) {
             androidx.compose.runtime.SideEffect {
                 mainWindow = window as? java.awt.Frame
+                com.yunx.app.ui.components.PreviewFullscreen.windowState = windowState
                 // 剪贴板分享链接弹窗：主窗口引用用于「主窗口失焦时才弹」判断 + 「打开」时切回前台
                 ClipboardLinkController.mainWindow = mainWindow
             }

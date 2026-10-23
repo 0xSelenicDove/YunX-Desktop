@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import com.yunx.app.data.network.video.VideoMedia
 import com.yunx.app.ui.BackHandler
 import com.yunx.app.ui.components.ImageViewerOverlay
+import com.yunx.app.ui.components.VideoPreviewOverlay
 import com.yunx.app.ui.viewmodel.VideoResolveUiState
 import com.yunx.app.ui.viewmodel.VideoResolveViewModel
 
@@ -47,6 +48,8 @@ fun VideoResolveScreen(
     val state = viewModel.uiState
     // 预览同时带上该图片的请求头（视频图集 CDN 有防盗链）
     var preview by remember { mutableStateOf<Pair<String, Map<String, String>>?>(null) }
+    // 视频预览：非空时铺播放器覆盖层
+    var videoPreview by remember { mutableStateOf<VideoMedia?>(null) }
 
     BackHandler { onBack() }
 
@@ -102,6 +105,7 @@ fun VideoResolveScreen(
                 },
                 onDownloadMedia = { media -> onDownload(listOf(media)) },
                 onPreviewImage = { url, headers -> preview = url to headers },
+                onPreviewVideo = { media -> videoPreview = media },
                 onBack = onBack
             )
         }
@@ -111,6 +115,12 @@ fun VideoResolveScreen(
             url = preview?.first,
             headers = preview?.second ?: emptyMap(),
             onDismiss = { preview = null }
+        )
+
+        // 视频预览播放器（JavaFX MediaView）；Esc 先退全屏再关闭，逻辑在 Overlay 内
+        VideoPreviewOverlay(
+            media = videoPreview,
+            onDismiss = { videoPreview = null }
         )
     }
 }
