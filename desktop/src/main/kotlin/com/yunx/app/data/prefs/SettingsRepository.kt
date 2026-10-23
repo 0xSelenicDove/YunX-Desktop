@@ -208,6 +208,16 @@ class SettingsRepository {
             prefs.putInt("theme_color_mode", value.coerceIn(0, 2))
         }
 
+    /**
+     * 「减少动画」开关（设置 → 主题与外观 → 动效）：默认关。
+     * 开启后关闭页面切换位移、列表增删等装饰性动画（与软件渲染判定取「或」，见 MotionPolicy）。
+     */
+    var reduceMotion: Boolean
+        get() = prefs.getBoolean("reduce_motion", false)
+        set(value) {
+            prefs.putBoolean("reduce_motion", value)
+        }
+
     /** 自定义主题种子色（ARGB 值） */
     var themeSeedColor: Long
         get() = prefs.getLong("theme_seed_color", DEFAULT_SEED_COLOR)

@@ -37,12 +37,16 @@ fun main(args: Array<String>) {
     // ★ 老旧 / 基础显示适配器（如 ATI Radeon 3000）上，OPENGL(ANGLE) 会出现「界面有形状、
     //   但一个文字都不渲染」，这类设备由 [RenderApiChooser] 自动退到 SOFTWARE。
     //   必须在创建任何窗口 / Skiko 初始化之前设置；环境变量 YUNXPC_RENDER_API 优先级更高。
+    var softwareRendering = false
     if (osName.contains("win")) {
         val renderApi = System.getenv("YUNXPC_RENDER_API")?.takeIf { it.isNotBlank() }
             ?: RenderApiChooser.chooseWindows()
         com.yunx.app.util.Log.i("YunX-Render", "渲染后端：$renderApi")
         System.setProperty("skiko.renderApi", renderApi)
+        softwareRendering = renderApi.equals("SOFTWARE", true)
     }
+    // 动效降级：软件渲染时每帧 CPU 光栅化，位移动画/列表增删只会更卡（§3.7）
+    runCatching { com.yunx.app.ui.theme.MotionPolicy.install(softwareRendering) }
     // 诊断日志：读开关（默认关）并定好落盘目录；开着才起写线程，关着这里几乎零开销
     runCatching { com.yunx.app.util.DiagnosticLog.install() }
     // 下载调试：读开关（默认关）。必须在任何下载开始之前装配，否则开关打开后先建的任务收不到事件

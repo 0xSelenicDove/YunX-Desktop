@@ -1,5 +1,6 @@
 package com.yunx.app.ui.screens
 
+import com.yunx.app.ui.theme.animateItemIfAllowed
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -563,7 +564,7 @@ fun DriveScreen(
                     )
                 }
                 items(others, key = { it.id }) { account ->
-                    DriveAccountCard(account = account, modifier = Modifier.animateItem())
+                    DriveAccountCard(account = account, modifier = animateItemIfAllowed())
                 }
                 item(key = github.id) {
                     // GitHub：已配置 Token 点击主体进入「我的主页」；未配置打开 Token 弹窗；更多按钮在登录后显示
@@ -856,9 +857,9 @@ private fun DriveAccountCardContent(
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // 品牌头像（暂用首字母，后续可替换为品牌图标）
+        // 品牌头像（暂用首字母，后续可替换为品牌图标）；尺寸与视频平台 Logo 对齐（#185：48→40dp）
         Surface(
-            modifier = Modifier.size(48.dp),
+            modifier = Modifier.size(40.dp),
             shape = CircleShape,
             color = if (account.isLoggedIn) {
                 MaterialTheme.colorScheme.primaryContainer

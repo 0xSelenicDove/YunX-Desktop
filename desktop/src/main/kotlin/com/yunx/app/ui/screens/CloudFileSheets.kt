@@ -1,10 +1,7 @@
 package com.yunx.app.ui.screens
 
+import com.yunx.app.ui.theme.Motion
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -383,7 +380,7 @@ private fun MoveStep(
         // 移动目录切换：淡入过渡
         AnimatedContent(
             targetState = moveState,
-            transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(140)) },
+            transitionSpec = { Motion.fade(180, 140) },
             label = "moveState"
         ) { s ->
             when (s) {
@@ -1126,7 +1123,7 @@ private fun BatchMoveStep(
         // 移动目录切换：淡入过渡
         AnimatedContent(
             targetState = moveState,
-            transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(140)) },
+            transitionSpec = { Motion.fade(180, 140) },
             label = "batchMoveState"
         ) { s ->
             when (s) {

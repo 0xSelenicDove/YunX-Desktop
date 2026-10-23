@@ -1,5 +1,6 @@
 package com.yunx.app.ui.screens
 
+import com.yunx.app.ui.theme.animateItemIfAllowed
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -666,7 +667,7 @@ private fun HomeShortcutsSection(
                 items(bookmarks, key = { it.id }) { bookmark ->
                     HomeShortcutTile(
                         bookmark = bookmark,
-                        modifier = Modifier.animateItem(),
+                        modifier = animateItemIfAllowed(),
                         onClick = { onOpen(bookmark) }
                     )
                 }

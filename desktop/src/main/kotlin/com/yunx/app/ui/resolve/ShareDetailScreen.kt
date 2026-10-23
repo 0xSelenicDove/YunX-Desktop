@@ -1,5 +1,6 @@
 package com.yunx.app.ui.resolve
 
+import com.yunx.app.ui.theme.animateItemIfAllowed
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
@@ -278,7 +279,7 @@ fun ShareDetailScreen(
             items(files, key = { it.fid }) { file ->
                 ShareFileRow(
                     file = file,
-                    modifier = Modifier.animateItem(),
+                    modifier = animateItemIfAllowed(),
                     onClick = {
                         if (viewModel.multiSelectMode) {
                             viewModel.toggleSelect(file)
@@ -662,7 +663,7 @@ internal fun ShareFileRow(
     showCheckbox: Boolean = false,
     /** 文件徽章（文件名旁；GitHub Releases 最新/预发布/草稿、账号 repo Fork/语言） */
     badge: @Composable (() -> Unit)? = null,
-    /** 列表项动画等（调用方传入 Modifier.animateItem()） */
+    /** 列表项动画等（调用方传入 Modifier.animateItemIfAllowed()） */
     modifier: Modifier = Modifier
 ) {
     Card(

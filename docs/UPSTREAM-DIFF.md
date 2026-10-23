@@ -401,6 +401,42 @@
 | `MultiAccountDownloadScreen` 独立二级页 + `ExperimentalBadge`（#179） | **改为并入桌面「实验性功能」页**；未单独抽 `ExperimentalBadge`（桌面实验性条目已有文案标注） |
 | C2 的 139 / 123 / 115 / 光鸭 / 蓝奏优享 / 蓝奏覆盖 | **未做**：这些平台的下载请求头不止 Cookie（115 是双 Cookie + Referer，123/光鸭/蓝奏是 CDN 签名头），多源必须按源重建整套头，本次不冒险；开关对它们退回单源 |
 
+### 9.14 本次对齐（上游 1.3.0 十连提交 `0a7c71e` ~ `3e51a4d`）
+
+本轮覆盖 #183 ~ #204（视频解析 + 下载链路 + 播放器 + 细节），对齐点由 `cad7718` 推进到 **`3e51a4d`**。
+方案与实测结论见 [1.3.0 移植方案](PORT-PLAN-1.3.0.md)。
+
+#### 已移植
+
+| 上游内容（提交） | 桌面实现与取舍 |
+| --- | --- |
+| 视频解析主体（#183） | `data/network/video/`：`VideoModels` / `VideoHttp` / `VideoParser` / 7 个平台 Parser / `VideoLinkParser`；`VideoParseRepository`、`VideoAccountRepository` |
+| 视频账号（#183） | `video_account` 表（含 `isPrimary`/`remark`）+ 列级加密 DAO；账号区复用网盘的多账号卡片（列表 / 设主账号 / 备注 / 退出）；登录走 JCEF `JcefLoginPane`（Cookie 自动回读 + 手动粘贴兜底） |
+| 解析结果页（#183） | `VideoResolveScreen` + `VideoResultSection`：作品信息、媒体行、图集网格、批量选择；图片来源桌面自带 `RemoteImageLoader`（走 OkHttp + Skia，不用 Coil） |
+| 图集查看器（#183） | `ImageViewerOverlay` 重写为桌面交互：滚轮以鼠标为锚点缩放、任意级别拖拽、双击复位、Esc 关闭 |
+| 下载链路（#183） | `DownloadManager` 接入四种形态：单文件 / HLS（`HlsDownloader` 分片→合并）/ Live Photo（`MotionPhotoWriter`，ImageIO 合成）/ 图集批量；`download_task` 新增 `mergeAudioUrl`、`mergeAudioHeadersJson`、`motionUrl` 三列 |
+| B站登录 + DASH 高清（#188） | 登录同视频账号体系；DASH 取音视频分轨直链，**`DashMuxer` 用 mp4parser 重写**（Android MediaCodec 无桌面等价物）。M1.5 探针用真实样本验证：双轨齐全、时长差 0.154s |
+| 小红书去水印（#189） | 图集地址换算原图 CDN（`sns-img-bd.xhscdn.com/<图片ID>`）；原图 404 时回退平台地址，并以 `notice` 提示降级张数 |
+| 动图 Live Photo（#202） | 微博 `videoSrc` / 抖音动图解析 + `MotionPhotoWriter` 合成单张 JPEG（保活元数据丢弃，观感一致） |
+| 预览播放器（#183） | **桌面重写**（ExoPlayer → JavaFX）：MP4 走本地回环代理（注入 `Referer`/`UA`/`Cookie` + Range 透传）；HLS 走自研 TS→fMP4 重封装并写本地增长文件实现边下边播（jfxmedia 不播 m3u8、也不吃 HTTP fMP4，见 PORT-PLAN §9.2）。控制条常显：播放/暂停、进度、倍速、静音、全屏 |
+| 抖音隐藏 WebView（#183） | `HeadlessWebView` 重写为 JCEF 隐藏浏览器 + `CefMessageRouter`（`cefQuery` 回传替代 `evaluateJavascript` 回调），仅在 SSR 路线失败时兜底 |
+| 图标 48→40dp（#185） | 视频平台 Logo 40dp；网盘账号头像 48→40dp 对齐 |
+| 版本 1.3.0（#186） | `version.txt` / 构建版本号 1.3.0 |
+| 删除弹窗整行可点（#204） | 下载页「删除任务」「删除全部」弹窗的「同时删除本地文件」改为整行 `toggleable`（`Role.Checkbox`），点文字也能切换 |
+| 动效降级（跨里程碑约束） | 新增 `MotionPolicy` + `Motion`：`软件渲染 || 用户开关` 时关闭主 Tab 位移（仅 ≤80ms 淡入）、目录切换淡入时长归零、列表 `animateItem` 关闭、引导页无限漂移改静态、返回顶部按钮缩放取消；设置 → 主题与外观 → 动效 新增「减少动画」开关（持久化、即时生效） |
+
+#### 跳过 / 桌面差异
+
+| 上游内容 | 处理 |
+| --- | --- |
+| 深链接恢复 / 返回键（#204） | **不适用**：Android Intent 与 Activity 返回栈；桌面已有剪贴板识别与 `BackHandler` |
+| 设置页容器变换（#184） | **不适用**：上游用 `materialSharedAxis` 的容器级变换，桌面页面切换是 Compose 的 `AnimatedContent`（本轮已接入 §3.7 降级） |
+| 支持页卡片几何（#184） | **未改**：桌面支持页布局本就与移动端不同（窗口宽、两列卡片），逐像素对齐没有收益 |
+| 清理 mp4parser 残留（#192） | **不适用**：桌面本轮才引入 mp4parser（#188 合轨需要） |
+| README 补 PC 说明（#196） | **改为桌面口径**：README / FEATURES 补「视频解析与预览」章节，不照搬移动端说明 |
+| 预览用 media3 `MergingMediaSource`（#183） | **不支持**：JavaFX 没有音轨合并能力，B站 DASH 在线预览不在本轮验收范围（下载后合轨可用） |
+| 视频卡片拆分（#185 后半） | **已由 #183 移植覆盖**：桌面账号区一开始就按「平台卡片 + 账号列表」拆分 |
+
 
 
 

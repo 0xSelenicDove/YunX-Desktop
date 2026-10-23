@@ -137,6 +137,7 @@ import com.yunx.app.ui.login.XunleiWebLoginScreen
 import com.yunx.app.ui.screens.VideoAccountSheet
 import com.yunx.app.ui.login.XunleiVerifyWebViewScreen
 import com.yunx.app.ui.navigation.MainTab
+import com.yunx.app.ui.theme.Motion
 import com.yunx.app.ui.screens.AboutScreen
 import com.yunx.app.ui.screens.AnnouncementPopupDialog
 import com.yunx.app.ui.screens.AnnouncementScreen
@@ -918,16 +919,8 @@ fun MainScreen(
         val tabContent: @Composable () -> Unit = {
             AnimatedContent(
                 targetState = currentTab,
-                transitionSpec = {
-                    val forward = targetState.ordinal > initialState.ordinal
-                    if (forward) {
-                        (fadeIn(tween(220)) + slideInHorizontally(tween(220)) { it / 4 })
-                            .togetherWith(fadeOut(tween(160)) + slideOutHorizontally(tween(160)) { -it / 4 })
-                    } else {
-                        (fadeIn(tween(220)) + slideInHorizontally(tween(220)) { -it / 4 })
-                            .togetherWith(fadeOut(tween(160)) + slideOutHorizontally(tween(160)) { it / 4 })
-                    }
-                },
+                // 位移+淡入；「减少动画」/ 软件渲染时只做极短淡入（§3.7）
+                transitionSpec = { Motion.tabSwitch(targetState.ordinal > initialState.ordinal) },
                 label = "mainTab"
             ) { tab ->
                 saveableStateHolder.SaveableStateProvider(tab) {

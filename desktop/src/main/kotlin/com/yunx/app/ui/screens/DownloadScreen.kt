@@ -1,5 +1,7 @@
 package com.yunx.app.ui.screens
 
+import com.yunx.app.ui.theme.Motion
+import com.yunx.app.ui.theme.animateItemIfAllowed
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -7,7 +9,6 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,6 +24,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -66,6 +68,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerEvent
@@ -131,7 +134,7 @@ fun DownloadScreen(
         // 用 AnimatedContent（而不是 Crossfade）便于后续按状态差异再定制过渡。
         AnimatedContent(
             targetState = tasks.isEmpty(),
-            transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(140)) },
+            transitionSpec = { Motion.fade(180, 140) },
             label = "downloadListState"
         ) { empty ->
             if (empty) {
@@ -173,7 +176,7 @@ fun DownloadScreen(
 
                     items(rootTasks, key = { it.id }) { task ->
                         DownloadTaskCard(
-                            modifier = Modifier.animateItem(),
+                            modifier = animateItemIfAllowed(),
                             task = task,
                             stats = stats[task.id],
                             onPause = { viewModel.pause(task.id) },
@@ -189,7 +192,7 @@ fun DownloadScreen(
                         val saveRoot = DownloadGrouping.folderSaveRoot(groupTasks.first(), globalSaveRoot)
                         item(key = "folder_${groupKey.first}_$folder") {
                             FolderDownloadGroup(
-                                modifier = Modifier.animateItem(),
+                                modifier = animateItemIfAllowed(),
                                 folder = folder,
                                 saveRoot = saveRoot,
                                 tasks = groupTasks,
@@ -257,13 +260,20 @@ fun DownloadScreen(
                         style = MaterialTheme.typography.bodyMedium
                     )
                     if (hasCompletedFile) {
+                        // #204：整行可点
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .toggleable(
+                                    value = deleteAllLocal,
+                                    role = Role.Checkbox,
+                                    onValueChange = { deleteAllLocal = it }
+                                ),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Checkbox(
                                 checked = deleteAllLocal,
-                                onCheckedChange = { deleteAllLocal = it }
+                                onCheckedChange = null
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
@@ -363,13 +373,20 @@ private fun DeleteConfirmDialog(
                     style = MaterialTheme.typography.bodyMedium
                 )
                 if (hasLocalFile) {
+                    // #204：整行可点（不只是勾选框本身），点文字也能切换
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .toggleable(
+                                value = deleteLocal,
+                                role = Role.Checkbox,
+                                onValueChange = { deleteLocal = it }
+                            ),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Checkbox(
                             checked = deleteLocal,
-                            onCheckedChange = { deleteLocal = it }
+                            onCheckedChange = null
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(

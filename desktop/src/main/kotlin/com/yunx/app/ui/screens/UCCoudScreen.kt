@@ -3,6 +3,8 @@ package com.yunx.app.ui.screens
 import com.yunx.app.ui.SnackbarController
 import com.yunx.app.ui.BackHandler
 import com.yunx.app.ui.components.rememberDownloadDirPicker
+import com.yunx.app.ui.theme.Motion
+import com.yunx.app.ui.theme.animateItemIfAllowed
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -10,7 +12,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -149,7 +150,7 @@ fun UCCoudScreen(
         AnimatedContent(
             targetState = state,
             transitionSpec = {
-                fadeIn(tween(200)) togetherWith fadeOut(tween(140))
+                Motion.fade(200, 140)
             },
             label = "ucCloudState"
         ) { s ->
@@ -277,7 +278,7 @@ fun UCCoudScreen(
                         items(s.files, key = { it.fid }) { file ->
                             ShareFileRow(
                                 file = file,
-                                modifier = Modifier.animateItem(),
+                                modifier = animateItemIfAllowed(),
                                 onClick = {
                                     if (viewModel.multiSelectMode) {
                                         viewModel.toggleSelect(file)
@@ -671,7 +672,7 @@ private fun UCMoveSheet(
             // 移动目录切换：淡入过渡
             AnimatedContent(
                 targetState = moveState,
-                transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(140)) },
+                transitionSpec = { Motion.fade(180, 140) },
                 label = "ucMoveState"
             ) { s ->
                 when (s) {

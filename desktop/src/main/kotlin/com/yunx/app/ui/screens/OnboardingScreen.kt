@@ -60,6 +60,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -78,6 +80,7 @@ import androidx.compose.ui.unit.sp
 import com.yunx.app.APP_VERSION
 import com.yunx.app.ui.GlobalSnackbarHost
 import com.yunx.app.ui.SnackbarController
+import com.yunx.app.ui.theme.MotionPolicy
 import com.yunx.app.util.DesktopActions
 import kotlinx.coroutines.launch
 import kotlin.math.PI
@@ -195,17 +198,22 @@ private fun BlobBackground(modifier: Modifier = Modifier) {
         Triple(scheme.tertiary, 0.28f, 0.34f),
         Triple(scheme.secondary, 0.24f, 0.67f)
     )
-    val transition = rememberInfiniteTransition(label = "blob")
+    val transition = if (MotionPolicy.reducedMotion) null else rememberInfiniteTransition(label = "blob")
+    // 降级时不做无限漂移：固定相位画静态光斑（§3.7「无限装饰动画 → 改静态」）
     val drift = blobs.mapIndexed { i, _ ->
-        transition.animateFloat(
-            initialValue = 0f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 17000 + i * 5300, easing = LinearEasing),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "blob$i"
-        )
+        if (transition == null) {
+            remember { mutableFloatStateOf(0.15f + i * 0.33f) }
+        } else {
+            transition.animateFloat(
+                initialValue = 0f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(durationMillis = 17000 + i * 5300, easing = LinearEasing),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "blob$i"
+            )
+        }
     }
     val base = scheme.surface
 
