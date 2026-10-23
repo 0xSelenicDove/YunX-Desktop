@@ -772,20 +772,24 @@ fun MainScreen(
         return
     }
 
-    // 视频解析结果页：全屏覆盖；返回时清空状态，避免下次打开看到上一次的结果
-    val pendingVideoText = videoResolveText
-    if (pendingVideoText != null) {
-        // ★ 这是早返回分支，不经过根部 Box 里的 LocalContentColor —— M3 默认内容色是黑色，
-        //   深色模式下未显式指定颜色的文字（错误提示等）会看不见，这里补上主题内容色
+    /**
+     * 视频解析结果页：渲染在**内容区**（左侧导航栏保留），与网盘解析同一套窗口内层级。
+     *
+     * ★ 原先这里是「整窗早返回」，会带来两个问题：
+     *   1. 侧栏被整页盖住，看起来像另开了一个窗口；
+     *   2. 早返回跳过了根部 Box 里的全局弹窗层（退出确认 / 提示弹窗），关窗时确认框被挡住。
+     *   页面自带页头（返回 + 平台 + 标题），显示时让出全局大标题。
+     * ★ 返回时不清空解析结果（[videoResolveViewModel.reset] 由下一次解析覆盖），避免退出瞬间闪空。
+     */
+    val videoResolvePage: @Composable () -> Unit = {
+        // 独立于根部的 LocalContentColor 提供点：M3 默认内容色是黑色，深色模式下
+        // 未显式指定颜色的文字（错误提示等）会看不见，这里补上主题内容色
         CompositionLocalProvider(
             LocalContentColor provides MaterialTheme.colorScheme.onBackground
         ) {
             VideoResolveScreen(
                 viewModel = videoResolveViewModel,
-                onBack = {
-                    videoResolveViewModel.reset()
-                    videoResolveText = null
-                },
+                onBack = { videoResolveText = null },
                 onDownload = { medias ->
                     val result = (videoResolveViewModel.uiState as? VideoResolveUiState.Success)?.result
                     if (result != null && medias.isNotEmpty()) {
@@ -812,7 +816,6 @@ fun MainScreen(
                 }
             )
         }
-        return
     }
 
     // 视频平台账号管理弹窗（多账号：设主账号 / 改备注 / 退出）
@@ -1102,20 +1105,29 @@ fun MainScreen(
             Row(modifier = Modifier.fillMaxSize()) {
                 MainNavigationRail(
                     currentTab = currentTab,
-                    onTabSelected = { currentTab = it }
+                    // 切 Tab 视为离开视频解析页（侧栏现在可点，不能让它一直压在新 Tab 上面）
+                    onTabSelected = {
+                        currentTab = it
+                        videoResolveText = null
+                    }
                 )
                 Column(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxSize()
                 ) {
-                    topBarContent()
+                    // 视频解析页自带页头（返回 + 平台 + 标题），打开时让出全局大标题
+                    if (videoResolveText == null) topBarContent()
                     Box(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth()
                     ) {
                         tabContent()
+                        // 视频解析结果压在本 Tab 内容之上（侧栏与全局弹窗层都留在外层）
+                        if (videoResolveText != null) {
+                            videoResolvePage()
+                        }
                     }
                 }
             }
