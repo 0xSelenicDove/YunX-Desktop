@@ -135,6 +135,7 @@ tasks.register<JavaExec>("testInProcess") {
         "com.yunx.app.data.db.SecureAccountDaosTest",
         "com.yunx.app.data.security.DbKeyStoreTest",
         "com.yunx.app.ui.login.XunleiVerificationPolicyTest",
+        "com.yunx.app.data.network.XunleiWebCredentialTest",
         "com.yunx.app.util.LogRedactorTest"
     )
 }

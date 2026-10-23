@@ -455,6 +455,30 @@
 | 补完模块后播放报 `ERROR_MEDIA_INVALID` | `LoopbackMediaProxy` 用 `resp.body.contentLength()` 取长度；OkHttp 的 HEAD 响应 body 为空（=0），于是对 HEAD 回了 `Content-Length: 0`，GStreamer 据此判定媒体为空 → 无效媒体 | 长度改为优先取上游 `Content-Length` 响应头。实测同一 B 站 durl：修复前 `ERROR_MEDIA_INVALID`，修复后 `READY duration=212394ms` 并正常播放 |
 | 打包后播放器直接初始化失败 `jdk/swing/interop/SwingInterOpUtils` | javafx.swing 的 `module-info` 要求 `jdk.unsupported.desktop`，jlink 同样探测不到 | 模块清单补 `jdk.unsupported.desktop` |
 
+### 9.16 本次对齐（上游 `4bd22e4` / #206）
+
+#### 已移植
+
+| 上游内容 | 桌面实现与取舍 |
+| --- | --- |
+| 迅雷网页账号「验证码无效」 | 根因同上游：网页登录拿到的是**网页 client_id** 的 token，却用 App client_id 签发的 captcha 去请求，服务端一律回 `captcha_invalid`（`client_id not match`）。桌面补上网页端 9 盐 `captcha_sign`（`XunleiWebCredential.computeCaptchaSign`，已知向量单测锁定）、`XunleiApi.initWebCaptcha`、按设备号 + 过期时间的 captcha 缓存、`webCaptchaRefresher` 钩子、`client_id not match` 直接报错不重试 |
+| 网页 captcha 只有 300s | 缓存从「单个字符串」改成 `PanCaptcha(token, expiresAtMs)`，过期即先换再请求，不再拿死 token 撞一次 `captcha_invalid` |
+| 签名被拒时回退网页会话 | 桌面用 `HeadlessWebView`（JCEF + `cefQuery`）重开 `pan.xunlei.com`，`REFRESH_READY_JS` 等到网页自己刷新出有效 captcha 后再 `READ_SCRIPT` 取凭据；Android 的隐藏 WebView 与 client hints/render-fix 注入不适用，已换成这套 |
+| 抢占/重连要点「真」掐断连接 | `ChunkDownloader` 新增 `activeChunkCalls` + `cancelChunkCall`，主池/弹性区/重试/**DASH 分轨**四条路径都逐片登记；看门狗抢占与调试页「重连」都主动 `call.cancel()`（只置标志位对挂住的连接无效） |
+| 「疑似卡死」改判据 | 调试页从「速度低于 12KB/s」改为「本轮采样零字节」，并显示「已 Ns 无数据」（`ChunkDebug.idleMs`）；低速但仍在推进的分片不再被误标 |
+| 断点续传进度校验 | 按当前计划逐片校验磁盘长度（`part_i` 不超过本片区间、只认弹性起点之后的 `seg_*`），并在取得大小后与恢复时**双向校正**写库，避免旧 job 残留把进度顶到 100% 后卡死 |
+| 认证备份纳入视频平台 | `AuthBackupManager` 增 `videoAccountDao`：`video:<PLATFORM>` 前缀与网盘共用 `accounts` 数组，逐行导出 `id/isPrimary/remark`；导入只恢复本版本仍认识的平台 |
+| 设置页文案 | 「网盘认证」→「认证备份」，「导出/导入认证信息」并说明含视频平台 |
+
+#### 跳过 / 桌面差异
+
+| 上游内容 | 处理 |
+| --- | --- |
+| WebView client hints（`UserAgentMetadata`）与登录页 render-fix JS | **不适用**：JCEF 直接跑桌面版页面，本来就是桌面 UA / 桌面布局；`isTrustedUrl` 等域名白名单逻辑桌面已有 |
+| 深链接统一处理（VIEW / SEND / PROCESS_TEXT） | **不适用**：Android Intent；桌面已有剪贴板识别 + 拖拽/命令行入口 |
+| 认证备份的 Android auto-backup 规则（`AuthBackupManager` 里的 XML 片段） | **不适用**：桌面备份走文件导入导出 |
+| 调试页「重连」文案与按钮 | 桌面已有等价入口，仅同步判据与日志文本（「手动抢占」→「手动重连」） |
+
 
 
 

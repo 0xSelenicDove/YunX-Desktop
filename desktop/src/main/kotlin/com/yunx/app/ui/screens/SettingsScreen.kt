@@ -423,19 +423,19 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        SectionLabel("网盘认证")
+        SectionLabel("认证备份")
         SettingsItem(
             icon = Icons.Outlined.Backup,
-            title = "导出网盘认证",
-            description = "使用至少 8 位口令加密 Cookie/JWT 后导出",
+            title = "导出认证信息",
+            description = "使用至少 8 位口令加密网盘与视频平台的 Cookie/JWT 后导出",
             onClick = { showExportAuthDialog = true }
         )
 
         Spacer(modifier = Modifier.height(8.dp))
         SettingsItem(
             icon = Icons.Outlined.Restore,
-            title = "导入网盘认证",
-            description = "选择加密或明文的认证备份文件，恢复网盘登录",
+            title = "导入认证信息",
+            description = "选择加密或明文的认证备份文件，恢复网盘与视频平台登录",
             onClick = {
                 val path = DesktopActions.pickFile(
                     filters = listOf(
@@ -899,7 +899,7 @@ fun SettingsScreen(
                     isExporting = false
                     val target = DesktopActions.saveFile(
                         defaultName = backupManager.defaultBackupFileName(encrypted),
-                        title = "导出网盘认证",
+                        title = "导出认证信息",
                         filters = listOf("云析认证备份 (*.yunx)" to "*.yunx", "所有文件 (*.*)" to "*.*"),
                         defaultExtension = "yunx"
                     ) ?: return@launch
@@ -1367,7 +1367,7 @@ private fun ExportAuthDialog(
     FadeAlertDialog(
         visible = visible,
         onDismissRequest = onDismiss,
-        title = { Text("导出网盘认证") },
+        title = { Text("导出认证信息") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
@@ -1398,7 +1398,7 @@ private fun ExportAuthDialog(
                         onClick = { onlyLoggedIn = true }
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("仅导出当前已登录的网盘", style = MaterialTheme.typography.bodyMedium)
+                    Text("仅导出当前已登录的账号", style = MaterialTheme.typography.bodyMedium)
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1409,7 +1409,7 @@ private fun ExportAuthDialog(
                         onClick = { onlyLoggedIn = false }
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("导出全部绑定的网盘", style = MaterialTheme.typography.bodyMedium)
+                    Text("导出全部绑定的账号", style = MaterialTheme.typography.bodyMedium)
                 }
             }
         },
@@ -1436,7 +1436,7 @@ private fun ImportAuthDialog(
     FadeAlertDialog(
         visible = visible,
         onDismissRequest = onDismiss,
-        title = { Text("导入网盘认证") },
+        title = { Text("导入认证信息") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(

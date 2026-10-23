@@ -320,7 +320,8 @@ fun MainScreen(
             db.pan115AccountDao(),
             db.guangyaAccountDao(),
             db.ilanzouAccountDao(),
-            db.lanzouAccountDao()
+            db.lanzouAccountDao(),
+            db.videoAccountDao()
         )
     }
     val downloadManager = remember {
@@ -475,6 +476,10 @@ fun MainScreen(
         else xunleiApi.refreshToken(acc.refreshToken, deviceId, acc.authType)?.also { (at, nrt) ->
             xunleiRepository.updateTokens(at, nrt)
         }
+    }
+    // 迅雷网页账号的 captcha 刷新：本地 9 盐签名 → 被拒才回退网页会话
+    xunleiApi.webCaptchaRefresher = { deviceId, action ->
+        xunleiRepository.refreshWebCaptcha(deviceId, action)
     }
     val xunleiCloudViewModel: XunleiCloudViewModel = viewModel(
         factory = XunleiCloudViewModel.Factory(

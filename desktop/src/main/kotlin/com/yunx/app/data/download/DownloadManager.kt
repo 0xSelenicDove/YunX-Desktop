@@ -88,6 +88,8 @@ data class ChunkDebug(
     /** 看门狗上一次采样算出的瞬时速度（字节/秒） */
     val bps: Long,
     val elapsedMs: Long,
+    /** 距上次收到字节已过多久：判断「连接被挂住」最直接的证据 */
+    val idleMs: Long,
     /** 已被「慢连接抢占」换连接的次数 */
     val preemptCount: Int,
     /** 是否已置位抢占标志（下一次检查点会断开换连接） */
@@ -259,7 +261,13 @@ private class InflightChunk(val start: Long, val size: Long, val worker: Int) {
     /** 上次被抢占的时刻（冷却期用） */
     var lastPreemptAtMs = 0L
 
+    /** 最后一次收到字节的时刻；「已 Ns 无数据」与「零字节卡死」判定都看它 */
+    var lastActivityAtMs = startedAtMs
+
     val elapsedMs: Long get() = System.currentTimeMillis() - startedAtMs
+
+    /** 距上次收到字节已过多久（连接被 CDN 挂住时这个值会一直涨） */
+    val idleMs: Long get() = System.currentTimeMillis() - lastActivityAtMs
 }
 
 /**
@@ -441,6 +449,7 @@ class DownloadManager(
         for (d in diag.values) {
             val bytes = d.bytes.get()
             d.lastBps = (bytes - d.lastBytes).coerceAtLeast(0L) * 1000 / (now - d.lastAtMs).coerceAtLeast(1L)
+            if (bytes > d.lastBytes) d.lastActivityAtMs = now
             d.lastBytes = bytes
             d.lastAtMs = now
         }
@@ -485,13 +494,18 @@ class DownloadManager(
             d.preemptCount++
             d.lastPreemptAtMs = now
             d.preempt.set(true)
+            // ★ 必须主动掐断在飞连接：只置标志位时，连接被 CDN 挂住（read 阻塞）就永远轮不到检查标志，
+            //   日志里就会看到「标了卡死 / 记了抢占，但那条连接一直不换」
+            downloader.cancelChunkCall(id, d.start.toString())
             taken++
             Log.w(TAG, "runTask: id=$id 抢占慢连接 分片=$chunkKey(worker#${d.worker}) 起点=${d.start} 块=${diagSize(d.size)} 已收=${diagSize(d.bytes.get())} " +
                 "瞬时=${diagSpeed(d.lastBps)} 阈值=${diagSpeed(floor)} 第${d.preemptCount}/$PREEMPT_MAX 次（换连接续传）")
             DownloadDebugLog.record(
-                id, "抢占慢连接",
+                id, "自动重连",
                 "分片=$chunkKey worker#${d.worker} 起点=${d.start} 块=${diagSize(d.size)} 已收=${diagSize(d.bytes.get())} " +
-                    "瞬时=${diagSpeed(d.lastBps)} 阈值=${diagSpeed(floor)} 第${d.preemptCount}/$PREEMPT_MAX 次"
+                    "瞬时=${diagSpeed(d.lastBps)} 阈值=${diagSpeed(floor)} 已跑=${d.elapsedMs / 1000}s " +
+                    "无数据=${d.idleMs / 1000}s " +
+                    "第${d.preemptCount}/$PREEMPT_MAX 次 → 已掐断当前连接、换新连接从已收字节续传"
             )
         }
     }
@@ -628,6 +642,7 @@ class DownloadManager(
                 received = d.bytes.get(),
                 bps = d.lastBps,
                 elapsedMs = d.elapsedMs,
+                idleMs = d.idleMs,
                 preemptCount = d.preemptCount,
                 preempting = d.preempt.get()
             )
@@ -637,8 +652,16 @@ class DownloadManager(
     /** 下载调试：手动把某一路标记为「慢连接、换连接续传」（调试页的「强制重连」） */
     fun forcePreemptChunk(taskId: Long, key: String): Boolean {
         val d = activeChunkMaps[taskId]?.get(key) ?: return false
-        DownloadDebugLog.record(taskId, "手动抢占", "调试页强制重连 key=$key")
+        DownloadDebugLog.record(
+            taskId, "手动重连",
+            "key=$key 起点=${d.start} 已收=${diagSize(d.bytes.get())}/${diagSize(d.size)} " +
+                "瞬时=${diagSpeed(d.lastBps)} 已跑=${d.elapsedMs / 1000}s 无数据=${d.idleMs / 1000}s " +
+                "已抢占${d.preemptCount}/$PREEMPT_MAX 次 → 已掐断当前连接、换新连接从已收字节续传"
+        )
         d.preempt.set(true)
+        // ★ 必须真的掐断在飞连接：只置标志位时，连接被 CDN 挂住（read 阻塞）就永远轮不到检查标志，
+        //   界面表现就是「点了重连没反应」
+        downloader.cancelChunkCall(taskId, d.start.toString())
         return true
     }
 
@@ -1782,7 +1805,8 @@ class DownloadManager(
             DiagnosticLog.DOWNLOAD, "task_size_probed", taskId = id, status = "downloading", size = total,
             summary = "已有进度=${task.downloadedSize} url=${LogRedactor.url(task.url)}"
         )
-        dao.updateProgress(id, DownloadTaskEntity.STATUS_DOWNLOADING, task.downloadedSize, total)
+        // ★ 钳制后再回写：库里可能残留旧版本写下的虚高进度（> total），别把它原样再写一遍
+        dao.updateProgress(id, DownloadTaskEntity.STATUS_DOWNLOADING, minOf(task.downloadedSize, total), total)
         // 取到大小后再次检查取消（暂停可能发生在 getTotalSize 期间）
         if (!isTaskActive()) return
 
@@ -1873,13 +1897,30 @@ class DownloadManager(
         // 注册实时统计：线程数 = 实际并发（受安全上限与内存预算约束）
         _stats.update { it + (id to DownloadStats(0L, -1L, actualWorkers)) }
 
-        // 统计已有 part/seg 大小（断点续传起点；主池 + 弹性区均按磁盘真实长度）
+        // 统计已有 part/seg 大小（断点续传起点）。
+        // ★★ 必须按「当前计划」逐片校验，不能直接按磁盘长度求和：
+        //    旧 job 残留的分片可能与当前计划重叠（分片数/片大小改过就必然错位），
+        //    求和会得到「比总大小还大」的进度 → 被钳到 100% → 界面永远卡 100% 但任务下不完。
+        //    规则：主池第 i 片只认 part_i 且长度不超过该片区间长度；弹性区只认位于弹性起点
+        //    （= mainPoolCount × chunkSize）之后的 seg，且长度不超过该段自身区间。
         val downloaded = AtomicLong(0)
         (0 until mainPoolCount).forEach { i ->
-            downloaded.addAndGet(File(chunkDir, "part_$i").length())
+            val begin = i.toLong() * chunkSize
+            val end = minOf(begin + chunkSize, total)
+            val len = File(chunkDir, "part_$i").length()
+            downloaded.addAndGet(len.coerceIn(0L, (end - begin).coerceAtLeast(0L)))
         }
+        val segRegionStart = mainPoolCount.toLong() * chunkSize
         chunkDir.listFiles { f -> f.name.startsWith("seg_") && f.name.endsWith(".part") }
-            ?.forEach { downloaded.addAndGet(it.length()) }
+            ?.forEach { f ->
+                val name = f.name.removePrefix("seg_").removeSuffix(".part")
+                val segStart = name.substringBefore('_').toLongOrNull()
+                val segEnd = name.substringAfter('_', "").toLongOrNull()
+                // 落在主池区间里的 seg 属于旧计划残留：不计入（否则与主池的 part 重复计数）
+                if (segStart != null && segEnd != null && segStart >= segRegionStart) {
+                    downloaded.addAndGet(f.length().coerceIn(0L, (segEnd - segStart + 1).coerceAtLeast(0L)))
+                }
+            }
         // ★ 钳制到 total：防旧 job 残留累加导致显示"已下载 > 总大小"
         val init = minOf(downloaded.get(), total)
         downloaded.set(init)
@@ -1961,6 +2002,8 @@ class DownloadManager(
                                 downloader.downloadChunk(
                                     taskId = id, url = src.url, start = start, end = end,
                                     partFile = partFile, headers = src.headers,
+                                    // ★ chunkKey = 该片的起点：让「重连」/抢占能据此主动掐断这条连接
+                                    chunkKey = diag.start.toString(),
                                     preempt = diag.preempt,
                                     contentDigest = partDigest
                                 ) { bytes ->
@@ -2034,6 +2077,7 @@ class DownloadManager(
                                 downloader.downloadChunk(
                                     taskId = id, url = src.url, start = s, end = e,
                                     partFile = segFile, headers = src.headers,
+                                    chunkKey = diag.start.toString(),
                                     preempt = diag.preempt,
                                     contentDigest = segDigest
                                 ) { bytes ->
@@ -2171,6 +2215,7 @@ class DownloadManager(
                                     downloader.downloadChunk(
                                         taskId = id, url = src.url, start = m.start, end = m.end,
                                         partFile = m.file, headers = src.headers,
+                                        chunkKey = diag.start.toString(),
                                         preempt = diag.preempt,
                                         contentDigest = retryDigest
                                     ) { bytes ->
@@ -2614,6 +2659,8 @@ class DownloadManager(
                                                     end = end,
                                                     channel = channel,
                                                     headers = headers,
+                                                    // 与看门狗 cancelChunkCall(id, d.start) 用同一个 key
+                                                    chunkKey = start.toString(),
                                                     preempt = diag.preempt
                                                 ) { bytes ->
                                                     diag.bytes.addAndGet(bytes)
