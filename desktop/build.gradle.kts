@@ -217,8 +217,10 @@ compose.desktop {
         mainClass = "com.yunx.app.MainKt"
         nativeDistributions {
             targetFormats(TargetFormat.Exe)
-            // sqlite-jdbc 通过反射加载 java.sql.Driver，jlink 自动检测不到，必须显式声明
-            modules("java.sql", "java.naming")
+            // sqlite-jdbc 通过反射加载 java.sql.Driver，jlink 自动检测不到，必须显式声明；
+            // jdk.httpserver 是视频预览的本地回环代理（com.sun.net.httpserver）—— jdeps 探测不到，
+            // 漏了它安装包里的预览会一律失败（「该视频暂时无法在线预览」）
+            modules("java.sql", "java.naming", "jdk.httpserver")
             // 每用户安装（%LOCALAPPDATA%\Programs），无需管理员权限
             windows {
                 perUserInstall = true
