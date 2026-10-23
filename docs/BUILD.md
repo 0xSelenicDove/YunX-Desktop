@@ -46,6 +46,42 @@ cd YunX-Desktop
 
 打包脚本会自动结束正在运行的程序实例，并在输出目录被占用时重试删除。
 
+## 体积与本地裁剪包
+
+`desktop/libs/` 下有三个**随仓库分发**的 jar，都是为了压缩体积或规避仓库坐标问题，改动前先读各自的说明：
+
+| 文件 | 作用 | 重新生成 |
+| --- | --- | --- |
+| `material-color-utilities-1.0.0.jar` | 主题种子色（该库无公开 Maven 坐标，从 material 1.14.0 AAR 解包 `classes.jar`） | 升级 material 依赖时需重新解包 |
+| `sqlite-jdbc-3.47.1.0-win.jar` | 只保留 `org/sqlite/native/Windows` 的 SQLite JDBC（官方包 13.6 MB → 2.4 MB） | 升级 sqlite-jdbc 时：解压官方 jar，删掉 `org/sqlite/native/{Mac,Linux,Linux-Musl,FreeBSD,Linux-Android}` 后重新打包 |
+| `material-icons-extended-trimmed-1.7.3.jar` | 只保留项目实际引用的图标（官方包 36 MB → 219 KB） | 见下 |
+
+### 图标裁剪包
+
+项目**不再**依赖 `compose.materialIconsExtended`（完整包 5000+ 图标、36 MB）。裁剪包只保留源码里
+`Icons.Outlined/Filled/Rounded/AutoMirrored.*` 实际引用到的图标类（约 92 个）。
+
+新增图标时：**先在代码里直接写** `Icons.Outlined.Xxx`，如果编译报 `Unresolved reference`，说明裁剪包里没有，
+按下面步骤重新生成（PowerShell，JDK 17）：
+
+```powershell
+# 1) 从源码收集引用到的图标类名
+$rx = [regex]'Icons\.(AutoMirrored\.)?(Outlined|Filled|Rounded|TwoTone|Default)\.([A-Za-z0-9_]+)'
+$need = New-Object 'System.Collections.Generic.HashSet[string]'
+Get-ChildItem desktop\src\main\kotlin -Recurse -Filter *.kt | ForEach-Object {
+  foreach ($m in $rx.Matches((Get-Content $_.FullName -Raw))) {
+    $auto = if ($m.Groups[1].Value) { "automirrored/" } else { "" }
+    $style = $m.Groups[2].Value.ToLower(); if ($style -eq "default") { $style = "filled" }
+    $null = $need.Add("androidx/compose/material/icons/$auto$style/$($m.Groups[3].Value)Kt.class")
+  }
+}
+# 2) 从 Gradle 缓存里的官方 jar 中挑出这些 class（外加 META-INF/MANIFEST.MF 与 *.kotlin_module）
+#    写成 desktop\libs\material-icons-extended-trimmed-<版本>.jar，并同步 build.gradle.kts 的文件名
+```
+
+> 说明：`material-icons-core`（几百 KB）仍由 `compose.material3` 传递引入，核心图标（Add / Close / Search …）
+> 的 Filled 版本来自它，不在裁剪包范围内。
+
 ## 目录结构
 
 | 目录 | 说明 |

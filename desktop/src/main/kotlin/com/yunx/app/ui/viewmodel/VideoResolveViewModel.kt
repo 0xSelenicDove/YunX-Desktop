@@ -29,7 +29,8 @@ sealed interface VideoResolveUiState {
  *
  * ★ 为什么不塞进 [ResolveViewModel]：网盘解析有 C1/C2/多账号/任务级目录等分支，
  *   视频解析是独立链路（解析器在 `data/network/video`），拆开后可单独演进、互不影响。
- * ★ 下载不在这里做：本里程碑只交付解析与结果页，下载链路（含 DASH 合轨 / 动图）在 Part 5。
+ * ★ 这里只管解析与多选；下载（含 DASH 合轨 / 动图合成）由 `DownloadManager` 按媒体的
+ *   `mergeAudioUrl` / `motionUrl` 字段分流，预览由 `VideoPreviewOverlay` 负责。
  */
 class VideoResolveViewModel internal constructor(
     private val repository: VideoParseRepository

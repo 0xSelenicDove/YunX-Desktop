@@ -61,6 +61,8 @@ import javafx.scene.media.Media
 import javafx.scene.media.MediaPlayer
 import javafx.scene.media.MediaView
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import java.awt.event.ComponentAdapter
 import java.awt.event.ComponentEvent
@@ -93,20 +95,12 @@ fun VideoPreviewOverlay(media: VideoMedia?, onDismiss: () -> Unit) {
     var error by remember(shown) { mutableStateOf<String?>(null) }
     var fullscreen by remember(shown) { mutableStateOf(false) }
 
-    LaunchedEffect(shown) {
-        val result = withContext(Dispatchers.IO) { runCatching { prepareSource(shown) } }
-        result.onSuccess { prepared ->
-            if (prepared == null) error = "该视频暂时无法在线预览" else source = prepared
-        }.onFailure {
-            Log.e(TAG, "预览源准备失败: ${it.message}")
-            error = "视频预览失败：${it.message ?: "未知错误"}"
-        }
+    // 关闭预览时如果还停在全屏，先把窗口还原（否则留下一个没有内容的空白全屏窗口）
+    LaunchedEffect(visible) {
+        if (!visible) fullscreen = false
     }
 
-    // 会话（HLS 临时文件 / 代理注册）在离开时释放；预览源换了先释放旧的
-    DisposableEffect(shown) {
-        onDispose { source?.close() }
-    }
+    // 全屏开关跟随窗口状态：进入时记住原布局（最大化/普通），退出时还原
     DisposableEffect(fullscreen) {
         PreviewFullscreen.set(fullscreen)
         onDispose { if (fullscreen) PreviewFullscreen.set(false) }
@@ -125,6 +119,34 @@ fun VideoPreviewOverlay(media: VideoMedia?, onDismiss: () -> Unit) {
             modifier = Modifier.fillMaxSize().background(Color.Black),
             contentAlignment = Alignment.Center
         ) {
+            // 播放源与内容同生命周期：淡出动画结束、内容被移除时才释放
+            // （HLS 会停止续写并删除临时文件；MP4 只注销代理登记）
+            LaunchedEffect(shown) {
+                // NonCancellable：用户在「准备中」关掉预览时，让准备动作跑完并拿到句柄再释放，
+                // 否则 HLS 会话（续写线程 + 临时文件）会悬空
+                val result = withContext(Dispatchers.IO + NonCancellable) {
+                    runCatching { prepareSource(shown) }
+                }
+                if (!isActive) {
+                    result.getOrNull()?.close()
+                    return@LaunchedEffect
+                }
+                result.onSuccess { prepared ->
+                    if (prepared == null) error = "该视频暂时无法在线预览" else source = prepared
+                }.onFailure {
+                    Log.e(TAG, "预览源准备失败: ${it.message}")
+                    error = "视频预览失败：${it.message ?: "未知错误"}"
+                }
+            }
+            DisposableEffect(shown) {
+                onDispose {
+                    // 先释放再清状态：同一个媒体再次打开时不能复用已关闭的会话
+                    source?.close()
+                    source = null
+                    error = null
+                }
+            }
+
             val prepared = source
             when {
                 error != null -> Text(
@@ -447,9 +469,20 @@ private object JavaFxRuntime {
 internal object PreviewFullscreen {
     var windowState: WindowState? = null
 
+    /** 进入全屏前的窗口布局（最大化 / 普通），退出时原样还原 */
+    private var previous: WindowPlacement? = null
+
     fun set(on: Boolean) {
         val state = windowState ?: return
-        state.placement = if (on) WindowPlacement.Fullscreen else WindowPlacement.Floating
+        if (on) {
+            if (state.placement == WindowPlacement.Fullscreen) return
+            previous = state.placement
+            state.placement = WindowPlacement.Fullscreen
+        } else {
+            val restore = previous ?: return
+            previous = null
+            state.placement = restore
+        }
     }
 }
 
