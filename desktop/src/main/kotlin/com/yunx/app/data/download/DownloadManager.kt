@@ -121,6 +121,12 @@ private val PLAN_MAIN = Regex("main=(\\d+)")
  *  进而触发整任务回退单流、速度暴跌。压在安全上限内，所有分片都能稳定拿到 206。 */
 private const val RANGE_WORKERS_CAP = 8
 
+/** DASH 分轨多连接下载：单个 Range 分块的最小字节数（太小的轨切块没有收益） */
+private const val DASH_CHUNK_MIN = 2L * 1024 * 1024
+
+/** DASH 两轨合计低于该字节数时不切块、单流顺序下载 */
+private const val PARALLEL_MIN_BYTES = 4L * 1024 * 1024
+
 /** 错峰建连上限（序号）：第 i 个分片首次请求前延迟 (min(i, STAGGER_CAP) * STAGGER_MS) */
 private const val STAGGER_CAP = 8
 private const val STAGGER_MS = 25L
@@ -2350,11 +2356,12 @@ class DownloadManager(
      *
      * ★ 与上游 Android 的差异：
      *   - Android 版用 `MediaExtractor` 抽轨样本、`MediaMuxer` 写标准 MP4；桌面 JVM 没有这两个类，
-     *     改由 [DashMuxer]（mp4parser，纯 Java、无原生库）读 fragmented MP4 的 moof/trun 并重建 moov，
-     *     同样只重封装、不重编码。代价是产物 moov 比原生 MediaMuxer 朴素，个别严格播放器的时间轴
-     *     支持稍差（详见 DashMuxer 的类注释）。
-     *   - Android 版两路可分片并行；这里两路都整文件顺序拉取（[ChunkDownloader.downloadFull]）：
-     *     分轨通常只有几十 MB，分片计划对它们没有收益，还会把 plan.txt / 断点续传语义搞复杂。
+     *     改由 [DashMuxer]（自研分片解析 + 写 moov/mdat，纯 Java、无原生库）读 fragmented MP4
+     *     的 moof/trun 并重建时间轴，同样只重封装、不重编码。
+     *   - Android 版两路可分片并行；这里同样是**两轨并行 + 每轨多连接 Range 并发**
+     *     （B 站 CDN 单连接通常只有 1~2 MB/s，串行单连接是「下载慢」的主因）。
+     *     连接数取用户设置（按 VIDEO 平台）并封顶 [RANGE_WORKERS_CAP]，每块至少 [DASH_CHUNK_MIN]。
+     *     服务器忽略 Range 时自动回退单流整文件（[ChunkDownloader.downloadFull]）。
      *     ⇒ 本路径**不做分片级断点续传**：暂停/失败后临时文件一律丢弃，恢复时两路整文件重下。
      *
      * 进度：下载阶段占 0~90%（两路字节累加，总大小取两路之和），合轨阶段占 90~100%。
@@ -2401,22 +2408,23 @@ class DownloadManager(
                 notifyProgress(id, task.fileName, reported(new), total)
             }
 
-            val videoOk = downloader.downloadFull(
-                taskId = id,
-                url = task.url,
-                partFile = videoFile,
-                headers = headers,
-                total = videoTotal
-            ) { bytes -> reportProgress(bytes) }
+            // 两轨并行 + 每轨多连接：CDN 对单连接的限速是 B 站下载慢的主因
+            val workers = min(threadProvider(DownloadPlatform.VIDEO), RANGE_WORKERS_CAP).coerceAtLeast(1)
+            val parallel = videoTotal > 0 && audioTotal > 0 && videoTotal + audioTotal >= PARALLEL_MIN_BYTES
+            val (videoOk, audioOk) = coroutineScope {
+                val video = async {
+                    downloadDashTrack(id, task.url, videoFile, headers, videoTotal, parallel, workers) { bytes ->
+                        reportProgress(bytes)
+                    }
+                }
+                val audio = async {
+                    downloadDashTrack(id, task.mergeAudioUrl, audioFile, audioHeaders, audioTotal, parallel, workers) { bytes ->
+                        reportProgress(bytes)
+                    }
+                }
+                video.await() to audio.await()
+            }
             if (!videoOk) throw IllegalStateException("视频轨下载失败（直链可能已过期）")
-            if (!isTaskActive()) return
-            val audioOk = downloader.downloadFull(
-                taskId = id,
-                url = task.mergeAudioUrl,
-                partFile = audioFile,
-                headers = audioHeaders,
-                total = audioTotal
-            ) { bytes -> reportProgress(bytes) }
             if (!audioOk) throw IllegalStateException("音轨下载失败（直链可能已过期，或需要独立的 Cookie）")
             if (!isTaskActive()) return
 
@@ -2475,6 +2483,96 @@ class DownloadManager(
             runCatching { audioFile.delete() }
             runCatching { mergedFile.delete() }
             _stats.update { it - id }
+        }
+    }
+
+    /**
+     * DASH 单轨下载：能切块就「多连接 Range 并发」，否则/被 CDN 忽略 Range 时回退单流。
+     *
+     * 并发度与网络无关的部分都在这里收口：块数 = min(workers, total / [DASH_CHUNK_MIN])，
+     * 每块至少 2MB —— 音轨常常只有 1~2MB，切块只会多一次握手。
+     */
+    private suspend fun downloadDashTrack(
+        id: Long,
+        url: String,
+        target: File,
+        headers: Map<String, String>,
+        total: Long,
+        parallel: Boolean,
+        workers: Int,
+        onBytes: suspend (Long) -> Unit
+    ): Boolean {
+        if (parallel && total > 0) {
+            val ranged = downloadTrackByRanges(id, url, target, headers, total, workers, onBytes)
+            if (ranged != null) return ranged
+            Log.w(TAG, "dashMergeDownload: id=$id 服务器忽略 Range，回退单流下载")
+        }
+        return downloader.downloadFull(
+            taskId = id,
+            url = url,
+            partFile = target,
+            headers = headers,
+            total = total,
+            onBytes = onBytes
+        )
+    }
+
+    /**
+     * 把一个分轨按 [workers] 路 Range 并发写进 [target]（预分配长度）。
+     *
+     * 返回 true/false = 成功/失败；**null = 服务器忽略 Range**（调用方回退单流）。
+     * `FileChannel.write(buf, position)` 是线程安全的，各路只写自己的区间。
+     */
+    private suspend fun downloadTrackByRanges(
+        id: Long,
+        url: String,
+        target: File,
+        headers: Map<String, String>,
+        total: Long,
+        workers: Int,
+        onBytes: suspend (Long) -> Unit
+    ): Boolean? {
+        val chunkCount = min(workers.toLong(), ceil(total.toDouble() / DASH_CHUNK_MIN).toLong())
+            .coerceAtLeast(1L).toInt()
+        val chunkSize = ceil(total.toDouble() / chunkCount).toLong()
+        target.delete()
+        val channel = FileChannel.open(
+            target.toPath(),
+            StandardOpenOption.CREATE,
+            StandardOpenOption.READ,
+            StandardOpenOption.WRITE
+        )
+        try {
+            channel.truncate(0)
+            RandomAccessFile(target, "rw").use { it.setLength(total) }
+            val results = coroutineScope {
+                (0 until chunkCount).map { index ->
+                    val start = index * chunkSize
+                    val end = min(total, start + chunkSize) - 1
+                    async(DownloadManager.chunkIoDispatcher) {
+                        inflightLimiter.withPermit {
+                            downloader.downloadRangeToChannel(
+                                taskId = id,
+                                url = url,
+                                start = start,
+                                end = end,
+                                channel = channel,
+                                headers = headers,
+                                onBytes = onBytes
+                            )
+                        }
+                    }
+                }.awaitAll()
+            }
+            return when {
+                results.all { it == ChunkResult.OK } -> true
+                results.any { it == ChunkResult.RANGE_IGNORED } -> null
+                else -> false
+            }
+        } finally {
+            runCatching { channel.close() }
+            // 失败/回退的残片一律丢掉：单流下载从 0 开始，留着只会误导
+            if (!target.isFile || target.length() != total) runCatching { target.delete() }
         }
     }
 

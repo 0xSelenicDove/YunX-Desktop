@@ -1,7 +1,9 @@
 package com.yunx.app.ui.resolve
 
 import com.yunx.app.ui.theme.animateItemIfAllowed
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -648,7 +650,7 @@ internal fun CrumbBar(
     }
 }
 
-@OptIn(ExperimentalComposeUiApi::class)
+@OptIn(ExperimentalComposeUiApi::class, ExperimentalFoundationApi::class)
 @Composable
 internal fun ShareFileRow(
     file: ShareFile,
@@ -657,7 +659,7 @@ internal fun ShareFileRow(
     onSave: (() -> Unit)? = null,
     /** 非空时行尾显示「更多」按钮（打开文件操作菜单） */
     onMore: (() -> Unit)? = null,
-    /** 右键 / 更多菜单（打开该行的操作菜单；多选模式下为 null） */
+    /** 右键 / 长按 / 更多菜单（打开该行的操作菜单；多选模式下为 null） */
     onContextMenu: (() -> Unit)? = null,
     /** 多选模式：是否选中 */
     selected: Boolean = false,
@@ -668,12 +670,18 @@ internal fun ShareFileRow(
     /** 列表项动画等（调用方传入 Modifier.animateItemIfAllowed()） */
     modifier: Modifier = Modifier
 ) {
+    // 打开操作菜单：右键、行尾「⋯」、左键长按三个入口，行为一致
+    val openMenu: (() -> Unit)? = (onContextMenu ?: onMore)
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                onClick = onClick,
+                // 桌面端常见习惯是右键，但手机式「长按」也保留，两边都能打开菜单
+                onLongClick = openMenu
+            )
             .onPointerEvent(PointerEventType.Press) { event ->
-                if (event.buttons.isSecondaryPressed) (onContextMenu ?: onMore)?.invoke()
+                if (event.buttons.isSecondaryPressed) openMenu?.invoke()
             },
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(
