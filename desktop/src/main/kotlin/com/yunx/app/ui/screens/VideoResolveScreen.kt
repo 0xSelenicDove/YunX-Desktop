@@ -45,7 +45,8 @@ fun VideoResolveScreen(
     modifier: Modifier = Modifier
 ) {
     val state = viewModel.uiState
-    var previewUrl by remember { mutableStateOf<String?>(null) }
+    // 预览同时带上该图片的请求头（视频图集 CDN 有防盗链）
+    var preview by remember { mutableStateOf<Pair<String, Map<String, String>>?>(null) }
 
     BackHandler { onBack() }
 
@@ -100,12 +101,16 @@ fun VideoResolveScreen(
                     if (picked.isNotEmpty()) onDownload(picked)
                 },
                 onDownloadMedia = { media -> onDownload(listOf(media)) },
-                onPreviewImage = { previewUrl = it },
+                onPreviewImage = { url, headers -> preview = url to headers },
                 onBack = onBack
             )
         }
 
         // 全屏看图（点图集单元格触发）；Esc 关闭由 Overlay 自己注册的 BackHandler 处理
-        ImageViewerOverlay(url = previewUrl, onDismiss = { previewUrl = null })
+        ImageViewerOverlay(
+            url = preview?.first,
+            headers = preview?.second ?: emptyMap(),
+            onDismiss = { preview = null }
+        )
     }
 }

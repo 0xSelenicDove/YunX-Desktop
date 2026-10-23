@@ -84,7 +84,7 @@ internal fun VideoResultSection(
     onDownloadSelected: () -> Unit,
     onDownloadMedia: (VideoMedia) -> Unit,
     /** 点击图片：把直链交给宿主放大查看 */
-    onPreviewImage: (String) -> Unit,
+    onPreviewImage: (String, Map<String, String>) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -147,7 +147,7 @@ internal fun VideoResultSection(
                                 total = images.size,
                                 selected = item.index in selected,
                                 onToggleSelect = { onToggleSelect(item.index) },
-                                onPreview = { onPreviewImage(item.value.url) }
+                                onPreview = { onPreviewImage(item.value.url, item.value.headers) }
                             )
                         }
                     }
@@ -360,6 +360,7 @@ private fun ImageGridCell(
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop,
             fallback = Icons.Outlined.BrokenImage,
+            headers = media.headers,
             onClick = onPreview
         )
 
@@ -410,7 +411,7 @@ private fun MediaRow(
     index: Int,
     media: VideoMedia,
     onDownload: () -> Unit,
-    onPreviewImage: (String) -> Unit
+    onPreviewImage: (String, Map<String, String>) -> Unit
 ) {
     val subtitle = buildList {
         if (media.quality.isNotBlank()) add(media.quality)
@@ -451,7 +452,8 @@ private fun MediaRow(
                     shape = RoundedCornerShape(8.dp),
                     contentScale = ContentScale.Crop,
                     fallback = Icons.Outlined.BrokenImage,
-                    onClick = { onPreviewImage(media.url) }
+                    headers = media.headers,
+                    onClick = { onPreviewImage(media.url, media.headers) }
                 )
                 Spacer(modifier = Modifier.width(12.dp))
             }

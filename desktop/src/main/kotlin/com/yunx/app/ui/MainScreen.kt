@@ -86,6 +86,7 @@ import com.yunx.app.data.network.TokenCheck
 import com.yunx.app.data.network.UCApi
 import com.yunx.app.data.network.XunleiApi
 import com.yunx.app.data.network.video.VideoPlatform
+import com.yunx.app.data.download.VideoDownloads
 import com.yunx.app.data.update.UpdateChecker
 import com.yunx.app.data.db.DownloadTaskEntity
 import com.yunx.app.data.prefs.SettingsRepository
@@ -173,6 +174,7 @@ import com.yunx.app.ui.viewmodel.Pan115CloudViewModel
 import com.yunx.app.ui.viewmodel.Pan123AccountViewModel
 import com.yunx.app.ui.viewmodel.Pan123CloudViewModel
 import com.yunx.app.ui.viewmodel.VideoAccountViewModel
+import com.yunx.app.ui.viewmodel.VideoResolveUiState
 import com.yunx.app.ui.viewmodel.VideoResolveViewModel
 import com.yunx.app.ui.viewmodel.QuarkAccountViewModel
 import com.yunx.app.ui.viewmodel.QuarkCloudViewModel
@@ -735,8 +737,28 @@ fun MainScreen(
                 videoResolveText = null
             },
             onDownload = { medias ->
-                // 下载链路（含 DASH 合轨 / 动图）在 Part 5 接入，这里先给出明确反馈
-                SnackbarController.show("已选择 ${medias.size} 项，下载链路将在下一步接入")
+                val result = (videoResolveViewModel.uiState as? VideoResolveUiState.Success)?.result
+                if (result != null && medias.isNotEmpty()) {
+                    scope.launch {
+                        medias.forEachIndexed { index, media ->
+                            downloadManager.enqueue(
+                                url = media.url,
+                                fileName = VideoDownloads.fileNameFor(result, media, index, medias.size),
+                                headers = media.headers,
+                                size = media.size,
+                                platform = DownloadPlatform.VIDEO,
+                                // DASH 音轨 / 动图资源随任务落库，由 DownloadManager 决定是否合轨或合成
+                                mergeAudioUrl = media.audioUrl,
+                                mergeAudioHeaders = media.audioHeaders,
+                                motionUrl = media.motionUrl
+                            )
+                        }
+                        SnackbarController.show("已加入下载队列（${medias.size} 项）")
+                        currentTab = MainTab.Download
+                        videoResolveViewModel.reset()
+                        videoResolveText = null
+                    }
+                }
             }
         )
         return

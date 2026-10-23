@@ -538,6 +538,13 @@ class DownloadManager(
     private val taskHeaders = ConcurrentHashMap<Long, Map<String, String>>()
 
     /**
+     * DASH 分轨任务的**音轨**请求头（音轨可能与视频轨属于不同账号，Cookie 不同）。
+     * 与 [taskHeaders] 同寿命：入队写入、删除任务/被拦下时清理；进程重启后从
+     * `download_task.mergeAudioHeadersJson`（加密）解回，见 [loadPersistedMergeAudioHeaders]。
+     */
+    private val taskMergeAudioHeaders = ConcurrentHashMap<Long, Map<String, String>>()
+
+    /**
      * 单文件多源分片（实验性 C2）的备选源：同一文件其他账号的直链 + 各自请求头。
      * 与 [taskHeaders] 同寿命（入队写入、任务终态清理），重启后从 download_task 里恢复。
      */
@@ -673,6 +680,18 @@ class DownloadManager(
         /** 本任务单独的保存目录（绝对路径）；空串 = 跟随「设置 → 储存目录」的全局下载目录。
          *  单次下载「下载到…」用它，避免为一两个文件反复改全局设置。 */
         saveDir: String = "",
+        /**
+         * DASH 分轨（哔哩哔哩高清：音视频分离）的**音轨**地址；空串 = 普通单文件下载。
+         * 非空时 runTask 走「双轨下载 + 合轨」，见 [dashMergeDownload]。
+         */
+        mergeAudioUrl: String = "",
+        /**
+         * 音轨请求头（可能和视频轨属于不同账号，Cookie 不一定相同）。
+         * 落库前按 `download.mergeAudioHeaders` 加密（与 requestHeadersJson 同一套凭据加密）。
+         */
+        mergeAudioHeaders: Map<String, String> = emptyMap(),
+        /** 动图资源地址（Motion Photo 合成用）；空串 = 普通静图，见 [motionPhotoDownload] */
+        motionUrl: String = "",
         /** 下载成功完成后的清理回调（如删除网盘临时转存文件）；失败/取消不触发。
          * 注意：必须是最后一个参数（调用点有大量尾随 lambda 用法，放它之后会编译失败）。 */
         onComplete: suspend () -> Unit = {}
@@ -691,7 +710,8 @@ class DownloadManager(
             }
         }
         val effectiveShareUrl = shareUrl.ifBlank { currentShareUrl }
-        Log.d(TAG, "enqueue: origin=${LogRedactor.url(url)} fileName=$safeName headers=${headers.keys} size=$size shareUrl=$effectiveShareUrl")
+        Log.d(TAG, "enqueue: origin=${LogRedactor.url(url)} fileName=$safeName headers=${headers.keys} size=$size shareUrl=$effectiveShareUrl " +
+            "dashAudio=${mergeAudioUrl.isNotBlank()} motion=${motionUrl.isNotBlank()}")
         val id = try {
             DiagnosticLog.dbOp("download_task", "insert", rowsOf = { 1 }) {
                 dao.insert(
@@ -702,7 +722,15 @@ class DownloadManager(
                         altSourcesJson = encodeAltSources(altSources),
                         platform = taskPlatform,
                         shareUrl = effectiveShareUrl,
-                        saveDir = saveDir.trim()
+                        saveDir = saveDir.trim(),
+                        mergeAudioUrl = mergeAudioUrl.trim(),
+                        // 音轨头里同样有 Cookie：与 requestHeadersJson 一样加密落库（空表存空串）
+                        mergeAudioHeadersJson = if (mergeAudioHeaders.isEmpty()) {
+                            ""
+                        } else {
+                            encodeHeaders(mergeAudioHeaders, "download.mergeAudioHeaders")
+                        },
+                        motionUrl = motionUrl.trim()
                     )
                 )
             }
@@ -728,6 +756,8 @@ class DownloadManager(
         )
         // 保存请求头（Cookie/UA），暂停后恢复仍需携带
         if (headers.isNotEmpty()) taskHeaders[id] = headers
+        // DASH 分轨的音轨头与视频轨分开保存（可能属于不同账号），同样用于暂停后恢复
+        if (mergeAudioHeaders.isNotEmpty()) taskMergeAudioHeaders[id] = mergeAudioHeaders
         // 备选源（多源分片）同样留在内存里，恢复/续传时不必回查数据库
         if (altSources.isNotEmpty()) taskAltSources[id] = altSources
         if (size > 0) taskSizes[id] = size
@@ -742,6 +772,7 @@ class DownloadManager(
             taskCallbacks.remove(id)
             // 不会有下载协程来消费这几份内存数据了，直接清掉
             taskHeaders.remove(id)
+            taskMergeAudioHeaders.remove(id)
             taskAltSources.remove(id)
             taskSizes.remove(id)
             taskFallbackUrls.remove(id)
@@ -749,8 +780,11 @@ class DownloadManager(
             dao.updateError(id, blocked)
             return id
         }
-        // 引擎分流：选了 Gopeed 且内核已导入时由外部引擎执行（GitHub 除外，见 shouldUseEngine）
-        if (shouldUseEngine(taskPlatform)) {
+        // 引擎分流：选了 Gopeed 且内核已导入时由外部引擎执行（GitHub 除外，见 shouldUseEngine）。
+        // ★ DASH 合轨 / 动图合成只能在应用内做：引擎只会下主 URL，不会拉音轨、不会合成，
+        //   所以这两类任务强制走内置下载器。
+        val needsLocalPipeline = mergeAudioUrl.isNotBlank() || motionUrl.isNotBlank()
+        if (!needsLocalPipeline && shouldUseEngine(taskPlatform)) {
             startViaEngine(id, url, safeName, headers, taskPlatform, saveDir)
         } else {
             start(id, headers)
@@ -798,7 +832,11 @@ class DownloadManager(
         if (task.directPart.isNotBlank()) dao.updateDirect(id, "", 0)
         enqueue(
             task.url, task.fileName, headers, task.totalSize, task.platform,
-            saveDir = task.saveDir
+            saveDir = task.saveDir,
+            // DASH 合轨 / 动态照片任务的「重新下载」也必须带上另外几路资源，否则只会下到半截内容
+            mergeAudioUrl = task.mergeAudioUrl,
+            mergeAudioHeaders = loadPersistedMergeAudioHeaders(task.mergeAudioHeadersJson),
+            motionUrl = task.motionUrl
         )
         return true
     }
@@ -967,6 +1005,7 @@ class DownloadManager(
         downloader.cancelCalls(id)
         _stats.update { it - id }
         taskHeaders.remove(id)
+        taskMergeAudioHeaders.remove(id)
         taskAltSources.remove(id)
         taskFallbackUrls.remove(id)
         // 删除任务同样触发清理回调（如删除网盘临时转存文件）：
@@ -1402,9 +1441,13 @@ class DownloadManager(
 
     // ---------- 内部实现 ----------
 
-    private fun encodeHeaders(headers: Map<String, String>): String {
+    /** 请求头落库：整体按 [key] 加密（下载主链用 `download.requestHeaders`，DASH 音轨用 `download.mergeAudioHeaders`） */
+    private fun encodeHeaders(
+        headers: Map<String, String>,
+        key: String = "download.requestHeaders"
+    ): String {
         val json = JSONObject().apply { headers.forEach { (name, value) -> put(name, value) } }.toString()
-        return credentialCipher.encrypt(json, "download.requestHeaders")
+        return credentialCipher.encrypt(json, key)
     }
 
     /**
@@ -1479,6 +1522,23 @@ class DownloadManager(
     /** 当前协程是否仍活跃（暂停/删除触发取消后为 false） */
     private suspend fun isTaskActive(): Boolean = coroutineContext[Job]?.isActive == true
 
+    /**
+     * 取回 DASH 音轨请求头（`download_task.mergeAudioHeadersJson`，加密落库）。
+     *
+     * 解析失败（密文损坏 / 换了密钥）按「无音轨头」处理：很多直链只校验 UA，
+     * 不能因为解不出 Cookie 就让整个合轨任务失败。
+     */
+    private fun loadPersistedMergeAudioHeaders(stored: String): Map<String, String> {
+        if (stored.isBlank()) return emptyMap()
+        return runCatching {
+            val json = JSONObject(credentialCipher.decrypt(stored, "download.mergeAudioHeaders"))
+            buildMap { json.keys().forEach { name -> put(name, json.getString(name)) } }
+        }.getOrElse {
+            Log.w(TAG, "loadPersistedMergeAudioHeaders: 解密失败，本次音轨不带请求头：${it.message}")
+            emptyMap()
+        }
+    }
+
     /** 等待并发许可：当前下载任务数 >= 上限时轮询等待（暂停/取消可退出等待） */
     private suspend fun awaitConcurrencySlot() {
         val max = concurrencyProvider().coerceAtLeast(1)
@@ -1539,6 +1599,29 @@ class DownloadManager(
         dao.updateStatus(id, DownloadTaskEntity.STATUS_DOWNLOADING)
         taskStartTimes[id] = System.currentTimeMillis()
         Log.d(TAG, "runTask: id=$id fileName=${task.fileName}")
+
+        // ★ 以下两条分支必须排在 HLS 判断之前：它们是「多资源合成一个文件」的语义，
+        //   主 URL 的扩展名（静图 jpg / 视频轨 m4s）不能决定下载方式。
+        // ① 动态照片（Motion Photo）：静图 + 动图资源 → 单文件
+        if (task.motionUrl.isNotBlank()) {
+            Log.d(
+                TAG, "runTask: id=$id 动态照片合成下载 still=${LogRedactor.url(task.url)} " +
+                    "motion=${LogRedactor.url(task.motionUrl)}"
+            )
+            DownloadDebugLog.record(id, "动图任务", "静图 + 动图 → 动态照片（合成失败降级为静图）")
+            motionPhotoDownload(id, task, headers)
+            return
+        }
+        // ② DASH 双轨（音视频分离）→ 合轨成普通 MP4
+        if (task.mergeAudioUrl.isNotBlank()) {
+            Log.d(
+                TAG, "runTask: id=$id DASH 双轨下载 video=${LogRedactor.url(task.url)} " +
+                    "audio=${LogRedactor.url(task.mergeAudioUrl)}"
+            )
+            DownloadDebugLog.record(id, "DASH 双轨", "视频轨 + 音轨 → 合轨（不重编码）")
+            dashMergeDownload(id, task, headers)
+            return
+        }
 
         // HLS（m3u8 转码流，如 UC play）：不走 Range 分片，直接拉分片合并
         if (task.url.contains(".m3u8", true) || task.url.contains(".m3u", true)) {
@@ -2258,6 +2341,295 @@ class DownloadManager(
         taskCallbacks.remove(id)?.let { cb -> runCatching { cb() } }
         _stats.update { it - id }
         hlsFile.delete()
+    }
+
+    // ---------- DASH 双轨合轨 / 动态照片合成 ----------
+
+    /**
+     * DASH 双轨（音视频分离）下载 + 合轨，产物是一个普通 MP4。
+     *
+     * ★ 与上游 Android 的差异：
+     *   - Android 版用 `MediaExtractor` 抽轨样本、`MediaMuxer` 写标准 MP4；桌面 JVM 没有这两个类，
+     *     改由 [DashMuxer]（mp4parser，纯 Java、无原生库）读 fragmented MP4 的 moof/trun 并重建 moov，
+     *     同样只重封装、不重编码。代价是产物 moov 比原生 MediaMuxer 朴素，个别严格播放器的时间轴
+     *     支持稍差（详见 DashMuxer 的类注释）。
+     *   - Android 版两路可分片并行；这里两路都整文件顺序拉取（[ChunkDownloader.downloadFull]）：
+     *     分轨通常只有几十 MB，分片计划对它们没有收益，还会把 plan.txt / 断点续传语义搞复杂。
+     *     ⇒ 本路径**不做分片级断点续传**：暂停/失败后临时文件一律丢弃，恢复时两路整文件重下。
+     *
+     * 进度：下载阶段占 0~90%（两路字节累加，总大小取两路之和），合轨阶段占 90~100%。
+     * 收口：成功 = COMPLETED，失败 = FAILED + 具体原因，绝不停在「下载中」。
+     * 失败**不再抛给 runTaskWithRetry**：合轨失败不是网络抖动，自动重试只会白下几十 MB；
+     * 暂停/取消仍按 CancellationException 原样上抛（交给 pause 的状态处理）。
+     */
+    private suspend fun dashMergeDownload(id: Long, task: DownloadTaskEntity, headers: Map<String, String>) {
+        if (!isTaskActive()) return
+        val mergeDir = AppContext.mergeDir.apply { mkdirs() }
+        val videoFile = File(mergeDir, "dash_video_$id")
+        val audioFile = File(mergeDir, "dash_audio_$id")
+        val mergedFile = File(mergeDir, "dash_merged_$id")
+        // 音轨头：内存表优先（入队/恢复时写入）；进程重启后从加密落库字段解回；都没有就不带头
+        val audioHeaders = taskMergeAudioHeaders[id]
+            ?: loadPersistedMergeAudioHeaders(task.mergeAudioHeadersJson)
+        _stats.update { it + (id to DownloadStats(0L, -1L, 1)) }
+        try {
+            // 视频轨 + 音轨 + 合轨产物会同时存在（≈2 份），先过统一的下载前空间守卫
+            DownloadCacheMaintenance.checkBeforeDownload(
+                cacheDir = AppContext.cacheDir,
+                saveDir = DownloadSaver.resolveSaveDir(effectiveSaveDir(task)),
+                totalBytes = 0L
+            )?.let { reason ->
+                DownloadDebugLog.record(id, "空间不足", reason)
+                throw DownloadCacheMaintenance.LowDiskSpaceException(reason)
+            }
+            videoFile.delete()
+            audioFile.delete()
+            mergedFile.delete()
+            val videoTotal = downloader.getTotalSize(task.url, headers) ?: 0L
+            val audioTotal = downloader.getTotalSize(task.mergeAudioUrl, audioHeaders) ?: 0L
+            val total = if (videoTotal > 0 && audioTotal > 0) videoTotal + audioTotal else 0L
+            dao.updateProgress(id, DownloadTaskEntity.STATUS_DOWNLOADING, 0, total)
+            val downloaded = AtomicLong(0)
+            val lastAt = AtomicLong(0L)
+            // 下载阶段只映射到 0~90%：把最后 10% 留给合轨，否则合轨时进度会从 100% 往回跳
+            fun reported(done: Long): Long = if (total > 0) minOf(done, total) * 9 / 10 else done
+            suspend fun reportProgress(bytes: Long) {
+                speedLimiter.awaitAllow(bytes)
+                val new = downloaded.addAndGet(bytes)
+                if (!isTaskActive()) return
+                persistProgressIfDue(id, reported(new), total, force = false, lastAt = lastAt)
+                notifyProgress(id, task.fileName, reported(new), total)
+            }
+
+            val videoOk = downloader.downloadFull(
+                taskId = id,
+                url = task.url,
+                partFile = videoFile,
+                headers = headers,
+                total = videoTotal
+            ) { bytes -> reportProgress(bytes) }
+            if (!videoOk) throw IllegalStateException("视频轨下载失败（直链可能已过期）")
+            if (!isTaskActive()) return
+            val audioOk = downloader.downloadFull(
+                taskId = id,
+                url = task.mergeAudioUrl,
+                partFile = audioFile,
+                headers = audioHeaders,
+                total = audioTotal
+            ) { bytes -> reportProgress(bytes) }
+            if (!audioOk) throw IllegalStateException("音轨下载失败（直链可能已过期，或需要独立的 Cookie）")
+            if (!isTaskActive()) return
+
+            // 合轨阶段（90%~100%）：DashMuxer 的进度回调不是挂起函数，进度先落在 AtomicLong，
+            // 由同一协程作用域里的 ticker 节流写库（回调里直接写库就得 runBlocking 阻塞 IO 线程）。
+            val muxRatio = AtomicLong(0L)
+            val muxLastAt = AtomicLong(0L)
+            val muxOk = coroutineScope {
+                val ticker = launch {
+                    while (true) {
+                        delay(300)
+                        val done = if (total > 0) {
+                            total * 9 / 10 + total / 10 * muxRatio.get() / 1000
+                        } else {
+                            0L
+                        }
+                        persistProgressIfDue(id, done, total, force = false, lastAt = muxLastAt)
+                    }
+                }
+                try {
+                    withContext(Dispatchers.IO) {
+                        DashMuxer.mux(videoFile, audioFile, mergedFile) { p ->
+                            muxRatio.set((p.coerceIn(0f, 1f) * 1000).toInt().toLong())
+                        }
+                    }
+                } finally {
+                    ticker.cancel()
+                }
+            }
+            if (!muxOk) throw IllegalStateException("合轨失败（视频轨/音轨不是可解析的 MP4 分轨）")
+            if (!isTaskActive()) return
+            if (total > 0) dao.updateProgress(id, DownloadTaskEntity.STATUS_DOWNLOADING, total, total)
+            if (!storagePermissionProvider()) throw IllegalStateException("未授予存储权限，无法保存到下载目录")
+            val savedPath = withContext(Dispatchers.IO) {
+                DownloadSaver.save(task.fileName, mergedFile, effectiveSaveDir(task))
+            } ?: throw IllegalStateException("保存到下载目录失败")
+            val size = mergedFile.length().takeIf { it > 0 } ?: total
+            completeWithAvg(id, savedPath, size)
+            Log.d(TAG, "dashMergeDownload: id=$id 合轨完成 savedPath=$savedPath size=$size")
+            DownloadDebugLog.record(
+                id, "合轨完成",
+                "视频=${videoFile.length()} 音轨=${audioFile.length()} 成品=$size 保存=$savedPath"
+            )
+            taskCallbacks.remove(id)?.let { cb -> runCatching { cb() } }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            val reason = e.message ?: e.javaClass.simpleName
+            Log.w(TAG, "dashMergeDownload: id=$id 失败：$reason")
+            DownloadDebugLog.record(id, "合轨失败", reason)
+            dao.updateStatus(id, DownloadTaskEntity.STATUS_FAILED)
+            dao.updateError(id, reason)
+        } finally {
+            // 临时文件一律清理：本路径不支持分片续传，半截文件下一轮也用不上
+            runCatching { videoFile.delete() }
+            runCatching { audioFile.delete() }
+            runCatching { mergedFile.delete() }
+            _stats.update { it - id }
+        }
+    }
+
+    /**
+     * 动态照片（Motion Photo）合成下载：静图 + 动图资源 → 一个「会动的照片」文件。
+     *
+     * ★ 与上游 Android 的差异：Android 端用 `BitmapFactory` 取尺寸、`Bitmap.compress` 兜底转 JPEG；
+     *   桌面端由 [MotionPhotoWriter] 换成 `ImageIO`。字节层结构（JPEG 段 / XMP / OPPO Exif /
+     *   尾部追加 MP4）完全一致，这里只负责「取料 →（必要时）重封装 → 合成 → 保存」。
+     *
+     * ★ 降级策略：动图只是加分项。动图下载/重封装/合成任一步失败都**不让任务失败**，
+     *   而是把静图原样存成普通图片并标记完成（Log.w + 调试日志记录降级原因）。
+     *   只有静图本身都下不下来时才报 FAILED —— 那时确实没有任何可保存的内容。
+     */
+    private suspend fun motionPhotoDownload(id: Long, task: DownloadTaskEntity, headers: Map<String, String>) {
+        if (!isTaskActive()) return
+        val mergeDir = AppContext.mergeDir.apply { mkdirs() }
+        val stillFile = File(mergeDir, "motion_still_$id")
+        val videoFile = File(mergeDir, "motion_video_$id")
+        val remuxedFile = File(mergeDir, "motion_video_$id.mp4")
+        val outFile = File(mergeDir, "motion_out_$id")
+        _stats.update { it + (id to DownloadStats(0L, -1L, 1)) }
+        try {
+            DownloadCacheMaintenance.checkBeforeDownload(
+                cacheDir = AppContext.cacheDir,
+                saveDir = DownloadSaver.resolveSaveDir(effectiveSaveDir(task)),
+                totalBytes = 0L
+            )?.let { reason ->
+                DownloadDebugLog.record(id, "空间不足", reason)
+                throw DownloadCacheMaintenance.LowDiskSpaceException(reason)
+            }
+            listOf(stillFile, videoFile, remuxedFile, outFile).forEach { runCatching { it.delete() } }
+            val stillTotal = downloader.getTotalSize(task.url, headers) ?: 0L
+            val motionTotal = downloader.getTotalSize(task.motionUrl, headers) ?: 0L
+            val total = if (stillTotal > 0 && motionTotal > 0) stillTotal + motionTotal else 0L
+            dao.updateProgress(id, DownloadTaskEntity.STATUS_DOWNLOADING, 0, total)
+            val downloaded = AtomicLong(0)
+            val lastAt = AtomicLong(0L)
+            // 下载阶段占 0~90%，最后 10% 留给「重封装 + 合成」（这一段没有细粒度回调）
+            fun reported(done: Long): Long = if (total > 0) minOf(done, total) * 9 / 10 else done
+            suspend fun reportProgress(bytes: Long) {
+                speedLimiter.awaitAllow(bytes)
+                val new = downloaded.addAndGet(bytes)
+                if (!isTaskActive()) return
+                persistProgressIfDue(id, reported(new), total, force = false, lastAt = lastAt)
+                notifyProgress(id, task.fileName, reported(new), total)
+            }
+
+            val stillOk = downloader.downloadFull(
+                taskId = id,
+                url = task.url,
+                partFile = stillFile,
+                headers = headers,
+                total = stillTotal
+            ) { bytes -> reportProgress(bytes) }
+            // 静图是唯一兜底内容：拿不到就没有任何可保存的东西，只能按失败收尾
+            if (!stillOk) throw IllegalStateException("静图下载失败（直链可能已过期）")
+            if (!isTaskActive()) return
+
+            // 动图这一段失败不致命：记下原因，后面走降级
+            val motionError: String? = try {
+                val motionOk = downloader.downloadFull(
+                    taskId = id,
+                    url = task.motionUrl,
+                    partFile = videoFile,
+                    headers = headers,
+                    total = motionTotal
+                ) { bytes -> reportProgress(bytes) }
+                if (!motionOk) throw IllegalStateException("动图资源下载失败（直链可能已过期）")
+                if (!isTaskActive()) return
+                // 微博的动图是 QuickTime（.mov）：先换标准 mp4 容器再内嵌；重封装失败就用原文件再试一次
+                val motionInput = if (needsMp4Remux(videoFile, task.motionUrl)) {
+                    val remuxed = withContext(Dispatchers.IO) { DashMuxer.remuxToMp4(videoFile, remuxedFile) }
+                    if (remuxed) {
+                        remuxedFile
+                    } else {
+                        Log.w(TAG, "motionPhotoDownload: id=$id 动图重封装失败，改用原文件继续尝试合成")
+                        videoFile
+                    }
+                } else {
+                    videoFile
+                }
+                val composed = withContext(Dispatchers.IO) {
+                    MotionPhotoWriter.write(stillFile, motionInput, outFile)
+                }
+                if (!composed) throw IllegalStateException("静图与动图合成失败")
+                null
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                e.message ?: e.javaClass.simpleName
+            }
+            if (!isTaskActive()) return
+            if (total > 0) dao.updateProgress(id, DownloadTaskEntity.STATUS_DOWNLOADING, total, total)
+            if (!storagePermissionProvider()) throw IllegalStateException("未授予存储权限，无法保存到下载目录")
+
+            val composeMissing = outFile.length() <= 0L
+            val degradedReason = if (motionError != null || composeMissing) {
+                motionError ?: "合成产物为空"
+            } else {
+                null
+            }
+            val source = if (degradedReason == null) outFile else stillFile
+            if (degradedReason != null) {
+                Log.w(TAG, "motionPhotoDownload: id=$id 动态照片合成失败，降级为静图：$degradedReason")
+                DownloadDebugLog.record(id, "动图降级", "合成失败，改为保存静图：$degradedReason")
+            }
+            val savedPath = withContext(Dispatchers.IO) {
+                DownloadSaver.save(task.fileName, source, effectiveSaveDir(task))
+            } ?: throw IllegalStateException("保存到下载目录失败")
+            val size = source.length()
+            completeWithAvg(id, savedPath, size)
+            Log.d(
+                TAG, "motionPhotoDownload: id=$id 完成 savedPath=$savedPath size=$size " +
+                    "degraded=${degradedReason != null}"
+            )
+            DownloadDebugLog.record(
+                id, "保存完成",
+                "文件名=${task.fileName} 大小=$size 降级=${degradedReason != null}"
+            )
+            taskCallbacks.remove(id)?.let { cb -> runCatching { cb() } }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            val reason = e.message ?: e.javaClass.simpleName
+            Log.w(TAG, "motionPhotoDownload: id=$id 失败：$reason")
+            DownloadDebugLog.record(id, "动图任务失败", reason)
+            dao.updateStatus(id, DownloadTaskEntity.STATUS_FAILED)
+            dao.updateError(id, reason)
+        } finally {
+            runCatching { stillFile.delete() }
+            runCatching { videoFile.delete() }
+            runCatching { remuxedFile.delete() }
+            runCatching { outFile.delete() }
+            _stats.update { it - id }
+        }
+    }
+
+    /**
+     * 动图资源是否需要先重封装成 MP4。
+     *
+     * 先看 URL 扩展名（微博是 `.mov`），再看文件头的 `ftyp` 品牌：QuickTime 的品牌是 `qt  `；
+     * 读不出 `ftyp`（不是 ISO BMFF）时也按「需要重封装」处理（失败后调用方会用原文件重试）。
+     */
+    private fun needsMp4Remux(file: File, url: String): Boolean {
+        val ext = url.substringBefore('?').substringBefore('#').substringAfterLast('.', "").lowercase()
+        if (ext.isNotEmpty() && ext != "mp4" && ext != "m4v") return true
+        return runCatching {
+            RandomAccessFile(file, "r").use { raf ->
+                val head = ByteArray(12)
+                raf.readFully(head)
+                if (String(head, 4, 4, Charsets.US_ASCII) != "ftyp") return@runCatching true
+                String(head, 8, 4, Charsets.US_ASCII) == "qt  "
+            }
+        }.getOrDefault(true)
     }
 
     // ---------- 实验性直写（缓存 0；目标目录 .yunx-*.part → 完成后改名） ----------

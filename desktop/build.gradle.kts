@@ -32,6 +32,14 @@ dependencies {
     // Compose Multiplatform 1.7.3 二进制不兼容，会在运行时抛 NoSuchMethodError
     implementation("com.mikepenz:multiplatform-markdown-renderer-m3:0.33.0")
 
+    // DASH 合轨 / MP4 重封装（纯 Java，无原生库）。
+    // 注意：1.9.x 把库拆成了两个 artifact —— isoparser 只有 box 层，
+    // MovieCreator / DefaultMp4Builder 在 muxer 里，且 muxer 会传递依赖同版本 isoparser。
+    implementation("org.mp4parser:muxer:1.9.56") {
+        // muxer 的 POM 把 junit 声明成 compile 依赖，运行期用不到，排除以免进安装包
+        exclude(group = "junit", module = "junit")
+    }
+
     // 方案 A：一键导入浏览器 Cookie（DPAPI 解密 Chromium 系浏览器的加密 Cookie）
     implementation("net.java.dev.jna:jna:5.14.0")
     implementation("net.java.dev.jna:jna-platform:5.14.0")
