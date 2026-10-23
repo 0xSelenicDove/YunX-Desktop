@@ -76,6 +76,9 @@ class XunleiAccountViewModel(
 
     fun beginAddAccount() { addNewAccount = true }
 
+    /** 当前是否是「添加账号」（网页登录页据此清掉旧登录态，避免静默登回旧账号） */
+    val isAddingAccount: Boolean get() = addNewAccount
+
     fun cancelAddAccount() { addNewAccount = false }
 
     /** 账号密码登录 */

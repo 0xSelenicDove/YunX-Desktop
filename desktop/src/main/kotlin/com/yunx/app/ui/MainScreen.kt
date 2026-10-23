@@ -184,8 +184,11 @@ import com.yunx.app.ui.viewmodel.UCAccountViewModel
 import com.yunx.app.ui.viewmodel.UCCoudViewModel
 import com.yunx.app.ui.viewmodel.XunleiAccountViewModel
 import com.yunx.app.ui.viewmodel.XunleiCloudViewModel
+import com.yunx.app.util.Log
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+
+private const val TAG = "YunX-Main"
 
 /**
  * 桌面版主页框架：
@@ -440,7 +443,11 @@ fun MainScreen(
      */
     val onAddAccount: (String) -> Unit = { platform ->
         scope.launch {
-            multiAccountViewModel.prepareAddAccount(platform)
+            // ★ 清登录态失败也必须继续打开登录页：不然用户看到的就是「点了添加账号没有任何反应」
+            val startedAt = System.currentTimeMillis()
+            runCatching { multiAccountViewModel.prepareAddAccount(platform) }
+                .onFailure { Log.w(TAG, "prepareAddAccount($platform) 失败：${it.message}") }
+            Log.d(TAG, "onAddAccount: platform=$platform 清登录态耗时=${System.currentTimeMillis() - startedAt}ms")
             when (platform) {
                 DownloadPlatform.QUARK -> { viewModel.beginAddAccount(); showQuarkLogin = true }
                 DownloadPlatform.UC -> { ucViewModel.beginAddAccount(); showUCLogin = true }

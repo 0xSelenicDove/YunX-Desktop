@@ -301,7 +301,7 @@ private fun WelcomePage() {
         )
         Spacer(modifier = Modifier.height(14.dp))
         Text(
-            text = "网盘分享链接解析与高速下载",
+            text = "网盘分享 · 视频链接，一站式解析与高速下载",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.Center
@@ -310,7 +310,12 @@ private fun WelcomePage() {
         Spacer(modifier = Modifier.height(26.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FactChip("10 大网盘")
+            FactChip("7 个视频平台")
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FactChip("分片下载")
+            FactChip("在线预览")
             FactChip("完全免费")
         }
 
@@ -451,7 +456,7 @@ private fun FeaturesPage() {
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(
-            text = "一个应用搞定分享链接解析与高速下载",
+            text = "网盘分享与视频链接，一个应用全部搞定",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -463,19 +468,24 @@ private fun FeaturesPage() {
             description = "夸克 / UC / 迅雷 / 百度 / 139 / 123 / 115 / 光鸭 / 蓝奏云 / 蓝奏云优享版 分享链接自动识别，登录网盘账号后即可解析与下载"
         )
         FeatureRow(
+            icon = Icons.Outlined.Forum,
+            title = "视频链接解析",
+            description = "哔哩哔哩 / 小红书 / 抖音 / 微博 / 快手 / AcFun / Pixiv：短链、口令、整段文案粘贴即解析，可选清晰度、批量下载图集"
+        )
+        FeatureRow(
             icon = Icons.Outlined.Speed,
             title = "高速分片下载",
-            description = "多线程并发 + 断点续传，充分利用带宽；也可切换 Gopeed 引擎下载磁力 / BT"
+            description = "多线程并发 + 断点续传 + 慢连接自动换线；B 站高清分轨两轨并行，下载后自动合轨"
         )
         FeatureRow(
             icon = Icons.Outlined.Storage,
-            title = "多平台支持",
-            description = "一个应用管理多个网盘账号，统一解析下载入口"
+            title = "在线预览与 Live 图",
+            description = "视频可直接在线播放（倍速 / 全屏 / 拖动）；微博、抖音动图可存为动态照片、静图或视频"
         )
         FeatureRow(
             icon = Icons.Outlined.Lock,
-            title = "隐私安全",
-            description = "登录凭证仅存本机，不上传任何服务器"
+            title = "多账号与隐私",
+            description = "网盘与视频平台都支持多账号（主账号 / 备注），凭证仅加密存本机，可导出加密备份换机恢复"
         )
 
         Spacer(modifier = Modifier.height(12.dp))
