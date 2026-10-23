@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
@@ -123,6 +124,12 @@ private const val RANGE_WORKERS_CAP = 8
 
 /** DASH 分轨多连接下载：单个 Range 分块的最小字节数（太小的轨切块没有收益） */
 private const val DASH_CHUNK_MIN = 2L * 1024 * 1024
+
+/** DASH 分轨最多切成多少块（只防极端超大文件把队列撑爆） */
+private const val DASH_MAX_CHUNKS = 1024
+
+/** DASH 单个分块的重试次数（`downloadRangeToChannel` 内部已重试，这里只兜最终失败） */
+private const val DASH_CHUNK_ATTEMPTS = 2
 
 /** DASH 两轨合计低于该字节数时不切块、单流顺序下载 */
 private const val PARALLEL_MIN_BYTES = 4L * 1024 * 1024
@@ -2398,6 +2405,9 @@ class DownloadManager(
             dao.updateProgress(id, DownloadTaskEntity.STATUS_DOWNLOADING, 0, total)
             val downloaded = AtomicLong(0)
             val lastAt = AtomicLong(0L)
+            // 两轨并行 + 每轨多连接：CDN 对单连接的限速是 B 站下载慢的主因
+            val workers = min(threadProvider(DownloadPlatform.VIDEO), RANGE_WORKERS_CAP).coerceAtLeast(1)
+            val speedRecorder = SpeedRecorder()
             // 下载阶段只映射到 0~90%：把最后 10% 留给合轨，否则合轨时进度会从 100% 往回跳
             fun reported(done: Long): Long = if (total > 0) minOf(done, total) * 9 / 10 else done
             suspend fun reportProgress(bytes: Long) {
@@ -2405,11 +2415,14 @@ class DownloadManager(
                 val new = downloaded.addAndGet(bytes)
                 if (!isTaskActive()) return
                 persistProgressIfDue(id, reported(new), total, force = false, lastAt = lastAt)
+                // 与普通下载同一套滑动窗口：不写 _stats 的话 B 站任务在界面上连速度都不显示
+                speedRecorder.onBytes(new)?.let { speed ->
+                    val remain = if (speed > 0 && total > new) (total - new) * 1000 / speed else -1L
+                    _stats.update { it + (id to DownloadStats(speed, remain, workers)) }
+                }
                 notifyProgress(id, task.fileName, reported(new), total)
             }
 
-            // 两轨并行 + 每轨多连接：CDN 对单连接的限速是 B 站下载慢的主因
-            val workers = min(threadProvider(DownloadPlatform.VIDEO), RANGE_WORKERS_CAP).coerceAtLeast(1)
             val parallel = videoTotal > 0 && audioTotal > 0 && videoTotal + audioTotal >= PARALLEL_MIN_BYTES
             val (videoOk, audioOk) = coroutineScope {
                 val video = async {
@@ -2427,6 +2440,8 @@ class DownloadManager(
             if (!videoOk) throw IllegalStateException("视频轨下载失败（直链可能已过期）")
             if (!audioOk) throw IllegalStateException("音轨下载失败（直链可能已过期，或需要独立的 Cookie）")
             if (!isTaskActive()) return
+            // 合轨阶段没有字节流动，速度归零（否则界面会一直显示上一个采样值）
+            _stats.update { it + (id to DownloadStats(0L, -1L, workers)) }
 
             // 合轨阶段（90%~100%）：DashMuxer 的进度回调不是挂起函数，进度先落在 AtomicLong，
             // 由同一协程作用域里的 ticker 节流写库（回调里直接写库就得 runBlocking 阻塞 IO 线程）。
@@ -2518,10 +2533,14 @@ class DownloadManager(
     }
 
     /**
-     * 把一个分轨按 [workers] 路 Range 并发写进 [target]（预分配长度）。
+     * 把一个分轨按 [workers] 路并发写进 [target]（预分配长度）。
+     *
+     * ★ 分块是**动态队列**而不是「一人一块」：一次切出很多小块，谁先下完谁领下一块。
+     *   一人一块时，跑得快的 worker 早早完工、慢的那条连接独自收尾 —— 这就是「越到后面越慢」。
+     *   队列模式让并发一直保持到只剩最后几块。
+     * ★ 同时接入「慢连接抢占」看门狗：CDN 会对单连接渐进限速，低于同伴的连接会被断开重连续传。
      *
      * 返回 true/false = 成功/失败；**null = 服务器忽略 Range**（调用方回退单流）。
-     * `FileChannel.write(buf, position)` 是线程安全的，各路只写自己的区间。
      */
     private suspend fun downloadTrackByRanges(
         id: Long,
@@ -2532,9 +2551,12 @@ class DownloadManager(
         workers: Int,
         onBytes: suspend (Long) -> Unit
     ): Boolean? {
-        val chunkCount = min(workers.toLong(), ceil(total.toDouble() / DASH_CHUNK_MIN).toLong())
-            .coerceAtLeast(1L).toInt()
-        val chunkSize = ceil(total.toDouble() / chunkCount).toLong()
+        val chunkBytes = dashChunkBytes(total)
+        val chunkCount = ceil(total.toDouble() / chunkBytes).toLong()
+            .coerceIn(1L, DASH_MAX_CHUNKS.toLong()).toInt()
+        // 均分一遍，避免最后一块特别小
+        val perChunk = ceil(total.toDouble() / chunkCount).toLong()
+        val workerCount = min(workers, chunkCount).coerceAtLeast(1)
         target.delete()
         val channel = FileChannel.open(
             target.toPath(),
@@ -2545,35 +2567,115 @@ class DownloadManager(
         try {
             channel.truncate(0)
             RandomAccessFile(target, "rw").use { it.setLength(total) }
-            val results = coroutineScope {
-                (0 until chunkCount).map { index ->
-                    val start = index * chunkSize
-                    val end = min(total, start + chunkSize) - 1
-                    async(DownloadManager.chunkIoDispatcher) {
-                        inflightLimiter.withPermit {
-                            downloader.downloadRangeToChannel(
-                                taskId = id,
-                                url = url,
-                                start = start,
-                                end = end,
-                                channel = channel,
-                                headers = headers,
-                                onBytes = onBytes
-                            )
-                        }
+            val nextIndex = AtomicInteger(0)
+            val rangeIgnored = AtomicInteger(0)
+            val failed = AtomicInteger(0)
+            val preempted = AtomicInteger(0)
+            val moved = AtomicLong(0)
+            val startedAt = System.currentTimeMillis()
+            val inflight = ConcurrentHashMap<String, InflightChunk>()
+            coroutineScope {
+                // 看门狗：每 5s 采样一次每路瞬时速度，把明显跑不动的连接换掉（与主下载路径同一套阈值）
+                val watchdog = launch {
+                    while (isActive) {
+                        delay(PREEMPT_TICK_MS)
+                        if (inflight.isEmpty()) continue
+                        sampleInflightChunks(inflight)
+                        preemptSlowChunks(
+                            id = id,
+                            downloaded = moved.get(),
+                            elapsedMs = System.currentTimeMillis() - startedAt,
+                            workers = workerCount,
+                            diag = inflight
+                        )
                     }
-                }.awaitAll()
+                }
+                try {
+                    List(workerCount) { workerIndex ->
+                        async(DownloadManager.chunkIoDispatcher) {
+                            while (true) {
+                                if (rangeIgnored.get() > 0) break
+                                val index = nextIndex.getAndIncrement()
+                                if (index >= chunkCount) break
+                                val start = index.toLong() * perChunk
+                                val end = min(start + perChunk, total) - 1
+                                val diagKey = "dash${index + 1}"
+                                val diag = InflightChunk(start, end - start + 1, workerIndex)
+                                inflight[diagKey] = diag
+                                try {
+                                    var attempt = 0
+                                    while (true) {
+                                        val result = try {
+                                            inflightLimiter.withPermit {
+                                                downloader.downloadRangeToChannel(
+                                                    taskId = id,
+                                                    url = url,
+                                                    start = start,
+                                                    end = end,
+                                                    channel = channel,
+                                                    headers = headers,
+                                                    preempt = diag.preempt
+                                                ) { bytes ->
+                                                    diag.bytes.addAndGet(bytes)
+                                                    moved.addAndGet(bytes)
+                                                    onBytes(bytes)
+                                                }
+                                            }
+                                        } catch (e: CancellationException) {
+                                            throw e
+                                        } catch (e: Exception) {
+                                            Log.w(TAG, "dash track $id 分块${index + 1}/$chunkCount 异常: ${e.message}")
+                                            ChunkResult.FAILED
+                                        }
+                                        if (result == ChunkResult.OK) break
+                                        if (result == ChunkResult.RANGE_IGNORED) {
+                                            rangeIgnored.incrementAndGet()
+                                            break
+                                        }
+                                        attempt++
+                                        if (attempt >= DASH_CHUNK_ATTEMPTS) {
+                                            failed.incrementAndGet()
+                                            break
+                                        }
+                                        delay(300L * attempt)
+                                    }
+                                } finally {
+                                    inflight.remove(diagKey)
+                                    if (diag.preemptCount > 0) preempted.incrementAndGet()
+                                }
+                            }
+                        }
+                    }.awaitAll()
+                } finally {
+                    watchdog.cancel()
+                }
             }
-            return when {
-                results.all { it == ChunkResult.OK } -> true
-                results.any { it == ChunkResult.RANGE_IGNORED } -> null
-                else -> false
+            val ok = when {
+                rangeIgnored.get() > 0 -> null
+                failed.get() > 0 -> false
+                else -> true
             }
+            if (ok == true) {
+                val elapsed = System.currentTimeMillis() - startedAt
+                val avgBps = if (elapsed > 0) total * 1000 / elapsed else 0L
+                val summary = "${target.name} 块=$chunkCount 路=$workerCount 用时=${elapsed / 1000}s " +
+                    "平均=${diagSpeed(avgBps)}/${workerCount}路 换连接=${preempted.get()}"
+                Log.d(TAG, "dash 分轨下载完成: id=$id $summary")
+                DownloadDebugLog.record(id, "分轨下载完成", summary)
+            }
+            return ok
         } finally {
             runCatching { channel.close() }
             // 失败/回退的残片一律丢掉：单流下载从 0 开始，留着只会误导
             if (!target.isFile || target.length() != total) runCatching { target.delete() }
         }
+    }
+
+    /** DASH 分块大小：轨越大块越大（减少请求开销），收尾的并发衰减窗口约为「块大小 × 路数」 */
+    private fun dashChunkBytes(total: Long): Long = when {
+        total > 512L * 1024 * 1024 -> 8L * 1024 * 1024
+        total > 128L * 1024 * 1024 -> 4L * 1024 * 1024
+        else -> DASH_CHUNK_MIN
     }
 
     /**
