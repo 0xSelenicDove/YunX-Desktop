@@ -218,9 +218,10 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Exe)
             // sqlite-jdbc 通过反射加载 java.sql.Driver，jlink 自动检测不到，必须显式声明；
-            // jdk.httpserver 是视频预览的本地回环代理（com.sun.net.httpserver）—— jdeps 探测不到，
-            // 漏了它安装包里的预览会一律失败（「该视频暂时无法在线预览」）
-            modules("java.sql", "java.naming", "jdk.httpserver")
+            // jdk.httpserver 是视频预览的本地回环代理（com.sun.net.httpserver），
+            // jdk.unsupported.desktop 是 JavaFX 与 Swing 互操作（JFXPanel 里的 jdk.swing.interop）——
+            // 两者 jdeps 都探测不到，漏了它们安装包里的预览会一律失败（无法预览 / 播放器初始化失败）
+            modules("java.sql", "java.naming", "jdk.httpserver", "jdk.unsupported.desktop")
             // 每用户安装（%LOCALAPPDATA%\Programs），无需管理员权限
             windows {
                 perUserInstall = true

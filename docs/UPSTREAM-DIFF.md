@@ -447,6 +447,14 @@
 | B 站结果页没有「预览」 | 预览按钮按 `audioUrl.isBlank()` 判断，分轨条目一律隐藏；且 `.m4s` 分片流 JavaFX 既播不了扩展名也串不了两路 | 解析 DASH 时**另取**一次 `fnval=1&platform=html5` 的单文件 mp4 放进 `VideoMedia.previewUrl`（预览专用，不下载整片），预览优先用它走回环代理；下载仍走高清分轨。DASH 视频轨同时改为**优先 AVC**（codecid=7），合轨产物兼容性最好 |
 | Live 图选「视频格式」后仍是 `.jpg` | 只替换了 `url`，`VideoMediaKind` 仍是 `IMAGE` → 文件名按图集规则回退 `.jpg` | 选视频时把 `kind` 改成 `VIDEO`（扩展名由直链后缀决定，没有就 `.mp4`），并清掉「动图」清晰度标签 |
 
+**安装包/预览链路的连带缺陷**（都是开发运行看不出来、只有打包后才暴露的）：
+
+| 现象 | 根因 | 处理 |
+| --- | --- | --- |
+| 打包后一点预览就提示「该视频暂时无法在线预览」 | jlink 运行时镜像缺 `jdk.httpserver`，`com.sun.net.httpserver.HttpServer` 加载即 `NoClassDefFoundError`，回环代理起不来 | `portable-package.ps1` 与 `build.gradle.kts` 的模块清单补 `jdk.httpserver` |
+| 补完模块后播放报 `ERROR_MEDIA_INVALID` | `LoopbackMediaProxy` 用 `resp.body.contentLength()` 取长度；OkHttp 的 HEAD 响应 body 为空（=0），于是对 HEAD 回了 `Content-Length: 0`，GStreamer 据此判定媒体为空 → 无效媒体 | 长度改为优先取上游 `Content-Length` 响应头。实测同一 B 站 durl：修复前 `ERROR_MEDIA_INVALID`，修复后 `READY duration=212394ms` 并正常播放 |
+| 打包后播放器直接初始化失败 `jdk/swing/interop/SwingInterOpUtils` | javafx.swing 的 `module-info` 要求 `jdk.unsupported.desktop`，jlink 同样探测不到 | 模块清单补 `jdk.unsupported.desktop` |
+
 
 
 

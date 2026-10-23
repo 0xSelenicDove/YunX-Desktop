@@ -172,7 +172,13 @@ object LoopbackMediaProxy {
             outHeaders.set("Accept-Ranges", "bytes")
             outHeaders.set("Cache-Control", "no-store")
 
-            val length = resp.body?.contentLength() ?: -1L
+            // ★ 必须优先用上游的 Content-Length 响应头：
+            //   OkHttp 对 HEAD 请求的 body 是空的（contentLength()==0），照搬它会回一个
+            //   `Content-Length: 0`，jfxmedia/GStreamer 探测时据此判定「媒体长度为 0」→
+            //   ERROR_MEDIA_INVALID（下载正常、预览必崩就是这个原因）。
+            val length = resp.header("Content-Length")?.toLongOrNull()
+                ?: resp.body?.contentLength()?.takeIf { it >= 0 }
+                ?: -1L
             if (headOnly) {
                 if (length >= 0) outHeaders.set("Content-Length", length.toString())
                 exchange.sendResponseHeaders(resp.code, -1)
