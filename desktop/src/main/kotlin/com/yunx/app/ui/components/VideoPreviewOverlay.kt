@@ -566,6 +566,7 @@ internal object PreviewFullscreen {
                         runCatching {
                             frame.extendedState = frame.extendedState or java.awt.Frame.MAXIMIZED_BOTH
                         }
+                        refresh(frame)
                     }
                 }
             } else if (win != null && bounds != null) {
@@ -573,6 +574,44 @@ internal object PreviewFullscreen {
                 runCatching {
                     win.bounds = bounds
                     win.validate()
+                }
+                refresh(win)
+            }
+        }
+    }
+
+    /**
+     * 退出系统级全屏后强制窗口重排并重建渲染表面。
+     *
+     * Windows 的 [java.awt.GraphicsDevice.setFullScreenWindow] 只把窗口矩形改回来，
+     * Compose/Skiko 的渲染表面不一定会跟着重建，表现为「窗口已经缩小、界面仍按全屏比例显示」，
+     * 手动拖一下窗口（触发一次真实 resize）即恢复。这里自动复刻那次拖拽：把高度临时 +1px，
+     * 约 60ms 后再改回原矩形——分两拍是为了给 AWT/Skiko 留出处理第一次 WM_SIZE 的时间，
+     * 否则同一轮 EDT 内两次 setBounds 会被合并、Skiko 认为尺寸没变而跳过表面重建。
+     */
+    private fun refresh(win: java.awt.Window) {
+        SwingUtilities.invokeLater {
+            runCatching {
+                val frame = win as? java.awt.Frame
+                val maximized = frame != null &&
+                    (frame.extendedState and java.awt.Frame.MAXIMIZED_BOTH) != 0
+                val b = win.bounds
+                if (maximized) {
+                    // 最大化窗口本身就会经历一次真实尺寸变化，只需重绘，避免抖动把它打回 Floating
+                    win.validate()
+                    win.repaint()
+                } else {
+                    win.bounds = java.awt.Rectangle(b.x, b.y, b.width, b.height + 1)
+                    val timer = javax.swing.Timer(60) { evt ->
+                        (evt.source as javax.swing.Timer).stop()
+                        runCatching {
+                            win.bounds = b
+                            win.validate()
+                            win.repaint()
+                        }
+                    }
+                    timer.isRepeats = false
+                    timer.start()
                 }
             }
         }
