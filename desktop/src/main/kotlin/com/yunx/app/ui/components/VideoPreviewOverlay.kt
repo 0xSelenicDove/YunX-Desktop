@@ -8,12 +8,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
@@ -25,13 +27,12 @@ import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.VolumeOff
 import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -291,21 +292,21 @@ private fun PlayerControls(
                     tint = Color.White
                 )
             }
-            Box {
-                IconButton(onClick = { speedMenu = true }) {
-                    Icon(Icons.Rounded.Speed, contentDescription = "播放速度", tint = Color.White)
-                }
-                DropdownMenu(expanded = speedMenu, onDismissRequest = { speedMenu = false }) {
-                    SPEEDS.forEach { speed ->
-                        DropdownMenuItem(
-                            text = { Text("${speed}x") },
-                            onClick = {
-                                controller.setRate(speed)
-                                speedMenu = false
-                            }
-                        )
-                    }
-                }
+            // 倍速：不用 DropdownMenu —— 弹层会被重量级 JFXPanel 盖住（点开看起来「没反应」），
+            // 改成在控制条内部展开一行按钮，同时把当前倍速显示在按钮上
+            TextButton(onClick = { speedMenu = !speedMenu }) {
+                Icon(
+                    imageVector = Icons.Rounded.Speed,
+                    contentDescription = "播放速度",
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(2.dp))
+                Text(
+                    text = "${formatRate(controller.rate)}x",
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelMedium
+                )
             }
             IconButton(onClick = onToggleFullscreen) {
                 Icon(
@@ -316,6 +317,38 @@ private fun PlayerControls(
             }
             IconButton(onClick = onClose) {
                 Icon(Icons.Rounded.Close, contentDescription = "关闭预览", tint = Color.White)
+            }
+        }
+        // 倍速选项：展开在控制条内（在视频区域之外，不会被 JFXPanel 盖住）
+        if (speedMenu) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = "倍速",
+                    color = Color(0xFF9E9E9E),
+                    style = MaterialTheme.typography.labelSmall
+                )
+                SPEEDS.forEach { speed ->
+                    val selected = kotlin.math.abs(controller.rate - speed) < 0.01
+                    TextButton(
+                        onClick = {
+                            controller.applyRate(speed)
+                            speedMenu = false
+                        },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                    ) {
+                        Text(
+                            text = "${formatRate(speed)}x",
+                            color = if (selected) MaterialTheme.colorScheme.primary else Color(0xFFDDDDDD),
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
+                }
             }
         }
         if (title.isNotBlank()) {
@@ -341,6 +374,7 @@ private class FxVideoController(private val panel: JFXPanel) {
     var positionMs by mutableStateOf(0L)
     var durationMs by mutableStateOf(0L)
     var muted by mutableStateOf(false)
+    var rate by mutableStateOf(1.0)
     var error by mutableStateOf<String?>(null)
 
     private var player: MediaPlayer? = null
@@ -384,6 +418,7 @@ private class FxVideoController(private val panel: JFXPanel) {
                     playing = status == MediaPlayer.Status.PLAYING
                 }
                 fxPlayer.muteProperty().addListener { _, _, value -> muted = value }
+                fxPlayer.rateProperty().addListener { _, _, value -> rate = value.toDouble() }
 
                 durationMs = toMillis(loaded.duration)
                 applyScene()
@@ -423,7 +458,12 @@ private class FxVideoController(private val panel: JFXPanel) {
 
     fun seekTo(ms: Long) = post { p -> p.seek(javafx.util.Duration.millis(ms.toDouble())) }
 
-    fun setRate(value: Double) = post { p -> p.rate = value }
+    /** 设置播放倍速（属性 [rate] 的 setter 与 setRate 同名会撞 JVM 签名，故用 applyRate） */
+    fun applyRate(value: Double) = post { p ->
+        p.rate = value
+        // rateProperty 的回调在 FX 线程，这里先写一次让按钮上的文案立刻变
+        rate = value
+    }
 
     fun toggleMute() = post { p -> p.isMute = !p.isMute }
 
@@ -466,23 +506,52 @@ private object JavaFxRuntime {
     }
 }
 
-/** 全屏开关：Main 把主窗口的 [WindowState] 注入进来，播放器切窗口布局 */
+/** 全屏开关：Main 把主窗口的 [WindowState] 与 AWT 窗口注入进来，播放器切窗口布局 */
 internal object PreviewFullscreen {
     var windowState: WindowState? = null
 
-    /** 进入全屏前的窗口布局（最大化 / 普通），退出时原样还原 */
-    private var previous: WindowPlacement? = null
+    /** 主窗口（恢复窗口矩形用；只靠 WindowState 恢复不可靠，见 [set] 注释） */
+    var window: java.awt.Window? = null
+
+    /** 进入全屏前的窗口布局（最大化 / 普通）与窗口矩形，退出时原样还原 */
+    private var previousPlacement: WindowPlacement? = null
+    private var previousBounds: java.awt.Rectangle? = null
 
     fun set(on: Boolean) {
         val state = windowState ?: return
+        val win = window
         if (on) {
             if (state.placement == WindowPlacement.Fullscreen) return
-            previous = state.placement
+            previousPlacement = state.placement
+            previousBounds = win?.bounds
             state.placement = WindowPlacement.Fullscreen
         } else {
-            val restore = previous ?: return
-            previous = null
+            val restore = previousPlacement ?: return
+            val bounds = previousBounds
+            previousPlacement = null
+            previousBounds = null
             state.placement = restore
+            if (win == null || bounds == null) return
+            // ★ 从 Fullscreen 退回时 Compose 只把 placement 改回去，窗口矩形并不会可靠恢复
+            //   （实测会停在一个比原来更小的尺寸），而且画布尺寸有时不同步 —— 表现为
+            //   「窗口变小了，但内部 UI 还按全屏分辨率排版」，要去右上角最大化/还原一次才正常。
+            //   这里在下一轮 EDT 事件里显式把窗口矩形摆回去，再用 1px 抖动逼一次重新布局
+            //   （最大化状态交给系统处理，setBounds 会被忽略，所以只处理普通状态）。
+            if (restore != WindowPlacement.Floating) return
+            SwingUtilities.invokeLater {
+                runCatching {
+                    win.setBounds(bounds)
+                    win.validate()
+                }
+                SwingUtilities.invokeLater {
+                    runCatching {
+                        win.setSize(bounds.width + 1, bounds.height)
+                        win.validate()
+                        win.setSize(bounds.width, bounds.height)
+                        win.validate()
+                    }
+                }
+            }
         }
     }
 }
@@ -530,6 +599,10 @@ private fun toMillis(duration: javafx.util.Duration?): Long {
     val ms = duration.toMillis()
     return if (ms.isFinite() && ms > 0) ms.toLong() else 0L
 }
+
+/** 倍速文案：1.0 → "1"，1.25 → "1.25" */
+private fun formatRate(rate: Double): String =
+    if (rate == rate.toLong().toDouble()) rate.toLong().toString() else rate.toString()
 
 private fun formatTime(ms: Long): String {
     val totalSeconds = (ms / 1000).coerceAtLeast(0)

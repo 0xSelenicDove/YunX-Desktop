@@ -137,6 +137,8 @@ fun main(args: Array<String>) {
             androidx.compose.runtime.SideEffect {
                 mainWindow = window as? java.awt.Frame
                 com.yunx.app.ui.components.PreviewFullscreen.windowState = windowState
+                // 退出全屏时恢复窗口矩形要用真实窗口（只靠 WindowState 不可靠）
+                com.yunx.app.ui.components.PreviewFullscreen.window = window
                 // 剪贴板分享链接弹窗：主窗口引用用于「主窗口失焦时才弹」判断 + 「打开」时切回前台
                 ClipboardLinkController.mainWindow = mainWindow
             }
