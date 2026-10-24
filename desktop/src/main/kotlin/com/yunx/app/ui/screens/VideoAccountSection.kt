@@ -2,6 +2,7 @@ package com.yunx.app.ui.screens
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -36,13 +37,15 @@ import com.yunx.app.ui.items.logoAsset
  *
  * @param loginState 各平台当前账号（platform → 账号），决定显示「未登录 / 昵称 / 备注」
  * @param accounts 全部平台的视频账号，用于统计「共 N 个账号」
+ * @param columns 每行卡片数：跟随账号页的四宫格 / 列表模式（1 或 2）
  */
 @Composable
 internal fun VideoAccountSection(
     loginState: Map<VideoPlatform, VideoAccountEntity>,
     accounts: List<VideoAccountEntity>,
     onLogin: (VideoPlatform) -> Unit,
-    onManage: (VideoPlatform) -> Unit
+    onManage: (VideoPlatform) -> Unit,
+    columns: Int = 1
 ) {
     val platforms = remember { VideoParsers.supportedPlatforms }
     // 每个平台已登录的账号数：只有多账号时才需要在状态里补「共 N 个账号」
@@ -50,14 +53,24 @@ internal fun VideoAccountSection(
 
     // 一个平台一张卡片（与「网盘账号」区的 DriveAccountCard 同款：一样的 shape / 底色 / 间距 / 字号）
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        platforms.forEach { platform ->
-            VideoPlatformCard(
-                platform = platform,
-                account = loginState[platform],
-                accountCount = counts[platform.name] ?: 0,
-                onLogin = onLogin,
-                onManage = onManage
-            )
+        platforms.chunked(columns.coerceAtLeast(1)).forEach { rowItems ->
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                rowItems.forEach { platform ->
+                    Box(modifier = Modifier.weight(1f)) {
+                        VideoPlatformCard(
+                            platform = platform,
+                            account = loginState[platform],
+                            accountCount = counts[platform.name] ?: 0,
+                            onLogin = onLogin,
+                            onManage = onManage
+                        )
+                    }
+                }
+                // 末行不足一整行时补占位，保证卡片宽度与上一行一致
+                repeat(columns - rowItems.size) {
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+            }
         }
     }
 }

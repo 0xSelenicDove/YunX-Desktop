@@ -156,7 +156,17 @@ object LoopbackMediaProxy {
             return
         }
 
-        val response = fetchWithRedirects(startUrl, source.headers, rangeHeader, headOnly) ?: run {
+        var response = fetchWithRedirects(startUrl, source.headers, rangeHeader, headOnly)
+        // ★ 部分 CDN（如抖音）对 HEAD 支持不好：要么直接 405 / 403，要么 200 但只回
+        //   `Transfer-Encoding: chunked`（没有 Content-Length）。jfxmedia 探测时拿不到长度
+        //   就会判 ERROR_MEDIA_INVALID，所以这里退化成「GET + Range: bytes=0-0」，
+        //   从 206 的 `Content-Range: bytes 0-0/TOTAL` 里读出总长度。
+        if (headOnly && (response == null || response.code !in 200..299 || totalLength(response) < 0)) {
+            response?.close()
+            Log.w(TAG, "上游不支持 HEAD 或无长度信息，改用 Range 探测")
+            response = fetchWithRedirects(startUrl, source.headers, "bytes=0-0", headOnly = false)
+        }
+        if (response == null) {
             exchange.sendResponseHeaders(502, -1)
             return
         }
@@ -168,27 +178,59 @@ object LoopbackMediaProxy {
             }
             val outHeaders = exchange.responseHeaders
             resp.header("Content-Type")?.let { outHeaders.set("Content-Type", it) }
-            resp.header("Content-Range")?.let { outHeaders.set("Content-Range", it) }
+            // HEAD 不回 Content-Range：探测用的 206（bytes 0-0）对客户端没有意义
+            if (!headOnly) resp.header("Content-Range")?.let { outHeaders.set("Content-Range", it) }
             outHeaders.set("Accept-Ranges", "bytes")
             outHeaders.set("Cache-Control", "no-store")
 
-            // ★ 必须优先用上游的 Content-Length 响应头：
-            //   OkHttp 对 HEAD 请求的 body 是空的（contentLength()==0），照搬它会回一个
-            //   `Content-Length: 0`，jfxmedia/GStreamer 探测时据此判定「媒体长度为 0」→
-            //   ERROR_MEDIA_INVALID（下载正常、预览必崩就是这个原因）。
-            val length = resp.header("Content-Length")?.toLongOrNull()
-                ?: resp.body?.contentLength()?.takeIf { it >= 0 }
-                ?: -1L
             if (headOnly) {
-                if (length >= 0) outHeaders.set("Content-Length", length.toString())
-                exchange.sendResponseHeaders(resp.code, -1)
+                // ★ 必须优先用上游的 Content-Length 响应头：
+                //   OkHttp 对 HEAD 请求的 body 是空的（contentLength()==0），照搬它会回一个
+                //   `Content-Length: 0`，jfxmedia/GStreamer 探测时据此判定「媒体长度为 0」→
+                //   ERROR_MEDIA_INVALID（下载正常、预览必崩就是这个原因）。
+                val total = totalLength(resp)
+                if (total >= 0) {
+                    outHeaders.set("Content-Length", total.toString())
+                } else {
+                    Log.w(TAG, "预览源长度未知（上游既无 Content-Length 也无 Content-Range）")
+                }
+                // 留一条诊断日志：预览失败时可直接看出上游状态 / 类型 / 长度
+                Log.d(
+                    TAG,
+                    "预览探测: ${startUrl.host} HTTP ${resp.code} type=${resp.header("Content-Type")} len=$total"
+                )
+                // 统一回 200：探测请求拿到的可能是 206，但这里只是回答「这个文件多大」
+                exchange.sendResponseHeaders(200, -1)
                 return
             }
-            // 长度已知 → 定长响应；未知 → chunked（0 表示流式）
-            exchange.sendResponseHeaders(resp.code, if (length >= 0) length else 0)
+            // GET：Content-Length 必须是**这一次响应体的字节数**（206 时是分段长度，
+            // 不是文件总长；写错会让播放器的拖动 / 预读全部错位）
+            val bodyLength = resp.header("Content-Length")?.trim()?.toLongOrNull()
+                ?: resp.body?.contentLength()?.takeIf { it >= 0 }
+                ?: -1L
+            exchange.sendResponseHeaders(resp.code, if (bodyLength >= 0) bodyLength else 0)
             val body = resp.body ?: return
             copyCancellable(body.byteStream(), exchange.responseBody)
         }
+    }
+
+    /**
+     * 取上游的**文件总长度**（只用于回答 HEAD）：
+     * - 206（Range 请求）读 `Content-Range: bytes 0-0/12345` 里的总长 —— 此时
+     *   `Content-Length` 只是这一段（1 字节），不能当文件长度用；
+     * - 其次 `Content-Length` 响应头（HEAD / 200 整包）；
+     * - 最后退回 OkHttp 解析出的 body 长度。取不到返回 -1。
+     */
+    private fun totalLength(resp: Response): Long {
+        if (resp.code == 206) {
+            val total = resp.header("Content-Range")
+                ?.substringAfter('/', "")
+                ?.trim()
+                ?.toLongOrNull()
+            if (total != null && total >= 0) return total
+        }
+        resp.header("Content-Length")?.trim()?.toLongOrNull()?.let { if (it > 0) return it }
+        return resp.body?.contentLength()?.takeIf { it >= 0 } ?: -1L
     }
 
     // ---- 上游请求：手动跟随重定向，跨域剥敏感头（与 HlsRequestPolicy 一致）----

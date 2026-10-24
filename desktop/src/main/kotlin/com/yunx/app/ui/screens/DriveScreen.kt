@@ -587,6 +587,8 @@ fun DriveScreen(
                     VideoAccountSection(
                         loginState = videoLoginState,
                         accounts = videoAccounts,
+                        // 跟随网盘卡片的列数：四宫格时视频平台也排两列，否则切换模式只有上面变了
+                        columns = if (gridMode) 2 else 1,
                         onLogin = onVideoLogin,
                         onManage = onVideoManage
                     )
