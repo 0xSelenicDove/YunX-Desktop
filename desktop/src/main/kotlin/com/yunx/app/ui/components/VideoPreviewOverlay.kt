@@ -506,47 +506,56 @@ private object JavaFxRuntime {
     }
 }
 
-/** 全屏开关：Main 把主窗口的 [WindowState] 与 AWT 窗口注入进来，播放器切窗口布局 */
+/**
+ * 全屏开关：Main 把主窗口的 [WindowState] 与 AWT 窗口注入进来，播放器切窗口布局。
+ *
+ * 进入用 Compose 的 [WindowState.placement]；**退出必须走 AWT 的 `setFullScreenWindow(null)`**
+ * （实测 `placement = Floating` 不会真正退出系统级全屏：窗口尺寸会变，但 `device.fullScreenWindow`
+ * 仍非 null、`placement` 还会被同步回 `Fullscreen`，表现为「窗口是小了 / 内部 UI 仍是全屏比例」）。
+ */
 internal object PreviewFullscreen {
     var windowState: WindowState? = null
 
-    /** 主窗口（进出全屏 / 恢复窗口矩形都要真实窗口，只靠 WindowState 不可靠） */
+    /** 主窗口（退出全屏 / 还原窗口矩形都要真实窗口，只靠 WindowState 不可靠） */
     var window: java.awt.Window? = null
 
-    /** 进入全屏前是否处于最大化、以及窗口矩形（普通状态才用得着），退出时原样还原 */
-    private var previousMaximized = false
+    /**
+     * 是否由本对象打开着全屏。幂等标志：重复 set(true) / set(false) 只生效一次。
+     * 必要，因为 `DisposableEffect(fullscreen)` 在 fullscreen 由 true→false 时会先后触发
+     * 旧 effect 的 onDispose 与新 effect 的 body，`set(false)` 被连续调用两次——
+     * 第二次会把还没恢复的最大化又打回 Floating，形成竞态（窗口最大化 / UI 不还原）。
+     */
+    private var active = false
+
+    /** 进入全屏前 Compose 的布局与窗口矩形（最大化时矩形不用记），退出时原样还原 */
+    private var previousPlacement = WindowPlacement.Floating
     private var previousBounds: java.awt.Rectangle? = null
 
     fun set(on: Boolean) {
         val win = window
         val state = windowState
         if (on) {
+            if (active) return
             if (state?.placement == WindowPlacement.Fullscreen) return
             if (win != null && win.graphicsConfiguration?.device?.fullScreenWindow != null) return
-            previousMaximized =
-                win is java.awt.Frame && (win.extendedState and java.awt.Frame.MAXIMIZED_BOTH) != 0
-            previousBounds = if (previousMaximized) null else win?.bounds
+            active = true
+            // 以进入前的 Compose 布局判断是否最大化：系统级全屏会把 AWT 的 MAXIMIZED_BOTH 位清掉，
+            // 用 extendedState 判定会拿到错误结果，从而把普通窗口错误地恢复成最大化
+            previousPlacement = state?.placement ?: WindowPlacement.Floating
+            previousBounds =
+                if (previousPlacement == WindowPlacement.Maximized) null else win?.bounds
             state?.placement = WindowPlacement.Fullscreen
         } else {
-            val wasMaximized = previousMaximized
+            if (!active) return
+            active = false
+            val wasMaximized = previousPlacement == WindowPlacement.Maximized
             val bounds = previousBounds
-            previousMaximized = false
+            previousPlacement = WindowPlacement.Floating
             previousBounds = null
-            if (win == null) {
-                state?.placement = WindowPlacement.Floating
-                return
-            }
-            // ★ 退出系统级全屏必须显式 setFullscreen(false)：
-            //   ComposeWindow.setPlacement(Maximized) 只调 setMaximized(true)，不会 setFullscreen(false)（实测）。
-            //   所以若把 placement 直接设回 Maximized，「最大化前进入全屏」这一最常见路径根本退不出全屏——
-            //   device.fullScreenWindow 仍非 null、窗口仍是全屏尺寸，表现为「窗口变小 / 内部 UI 仍是全屏比例」。
-            //   这里直接用 AWT 设备 API 退出（Compose 自身在 Win/Linux 进全屏也是走这套 API），
-            //   退出后 Compose 会把 state.placement 同步回 Floating。
-            val device = win.graphicsConfiguration?.device
+            val device = win?.graphicsConfiguration?.device
             if (device != null && device.fullScreenWindow != null) {
+                // 退出系统级全屏：Compose 自身在 Win/Linux 进全屏也走这套 API，是唯一可靠的出口
                 runCatching { device.setFullScreenWindow(null) }
-            } else {
-                state?.placement = WindowPlacement.Floating
             }
             if (wasMaximized) {
                 // 恢复最大化要晚于退出全屏一拍：同一 tick 直接改 extendedState 会让窗口被异常放大
@@ -559,7 +568,7 @@ internal object PreviewFullscreen {
                         }
                     }
                 }
-            } else if (bounds != null) {
+            } else if (win != null && bounds != null) {
                 // 普通状态：显式还原矩形，不依赖 AWT 的「记忆普通尺寸」（可能被污染而变小）
                 runCatching {
                     win.bounds = bounds
