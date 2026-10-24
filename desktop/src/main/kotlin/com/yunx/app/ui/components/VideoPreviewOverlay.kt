@@ -510,46 +510,60 @@ private object JavaFxRuntime {
 internal object PreviewFullscreen {
     var windowState: WindowState? = null
 
-    /** 主窗口（恢复窗口矩形用；只靠 WindowState 恢复不可靠，见 [set] 注释） */
+    /** 主窗口（进出全屏 / 恢复窗口矩形都要真实窗口，只靠 WindowState 不可靠） */
     var window: java.awt.Window? = null
 
-    /** 进入全屏前的窗口布局（最大化 / 普通）与窗口矩形，退出时原样还原 */
-    private var previousPlacement: WindowPlacement? = null
+    /** 进入全屏前是否处于最大化、以及窗口矩形（普通状态才用得着），退出时原样还原 */
+    private var previousMaximized = false
     private var previousBounds: java.awt.Rectangle? = null
 
     fun set(on: Boolean) {
-        val state = windowState ?: return
         val win = window
+        val state = windowState
         if (on) {
-            if (state.placement == WindowPlacement.Fullscreen) return
-            previousPlacement = state.placement
-            previousBounds = win?.bounds
-            state.placement = WindowPlacement.Fullscreen
+            if (state?.placement == WindowPlacement.Fullscreen) return
+            if (win != null && win.graphicsConfiguration?.device?.fullScreenWindow != null) return
+            previousMaximized =
+                win is java.awt.Frame && (win.extendedState and java.awt.Frame.MAXIMIZED_BOTH) != 0
+            previousBounds = if (previousMaximized) null else win?.bounds
+            state?.placement = WindowPlacement.Fullscreen
         } else {
-            val restore = previousPlacement ?: return
+            val wasMaximized = previousMaximized
             val bounds = previousBounds
-            previousPlacement = null
+            previousMaximized = false
             previousBounds = null
-            state.placement = restore
-            if (win == null || bounds == null) return
-            // ★ 从 Fullscreen 退回时 Compose 只把 placement 改回去，窗口矩形并不会可靠恢复
-            //   （实测会停在一个比原来更小的尺寸），而且画布尺寸有时不同步 —— 表现为
-            //   「窗口变小了，但内部 UI 还按全屏分辨率排版」，要去右上角最大化/还原一次才正常。
-            //   这里在下一轮 EDT 事件里显式把窗口矩形摆回去，再用 1px 抖动逼一次重新布局
-            //   （最大化状态交给系统处理，setBounds 会被忽略，所以只处理普通状态）。
-            if (restore != WindowPlacement.Floating) return
-            SwingUtilities.invokeLater {
-                runCatching {
-                    win.setBounds(bounds)
-                    win.validate()
-                }
-                SwingUtilities.invokeLater {
-                    runCatching {
-                        win.setSize(bounds.width + 1, bounds.height)
-                        win.validate()
-                        win.setSize(bounds.width, bounds.height)
-                        win.validate()
+            if (win == null) {
+                state?.placement = WindowPlacement.Floating
+                return
+            }
+            // ★ 退出系统级全屏必须显式 setFullscreen(false)：
+            //   ComposeWindow.setPlacement(Maximized) 只调 setMaximized(true)，不会 setFullscreen(false)（实测）。
+            //   所以若把 placement 直接设回 Maximized，「最大化前进入全屏」这一最常见路径根本退不出全屏——
+            //   device.fullScreenWindow 仍非 null、窗口仍是全屏尺寸，表现为「窗口变小 / 内部 UI 仍是全屏比例」。
+            //   这里直接用 AWT 设备 API 退出（Compose 自身在 Win/Linux 进全屏也是走这套 API），
+            //   退出后 Compose 会把 state.placement 同步回 Floating。
+            val device = win.graphicsConfiguration?.device
+            if (device != null && device.fullScreenWindow != null) {
+                runCatching { device.setFullScreenWindow(null) }
+            } else {
+                state?.placement = WindowPlacement.Floating
+            }
+            if (wasMaximized) {
+                // 恢复最大化要晚于退出全屏一拍：同一 tick 直接改 extendedState 会让窗口被异常放大
+                // （实测 2062x1118 → 2578x1398）。放到下一轮 EDT 事件里再恢复即正常。
+                val frame = win as? java.awt.Frame
+                if (frame != null) {
+                    SwingUtilities.invokeLater {
+                        runCatching {
+                            frame.extendedState = frame.extendedState or java.awt.Frame.MAXIMIZED_BOTH
+                        }
                     }
+                }
+            } else if (bounds != null) {
+                // 普通状态：显式还原矩形，不依赖 AWT 的「记忆普通尺寸」（可能被污染而变小）
+                runCatching {
+                    win.bounds = bounds
+                    win.validate()
                 }
             }
         }
