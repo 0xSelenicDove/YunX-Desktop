@@ -22,7 +22,7 @@ import androidx.compose.ui.node.DrawModifierNode
 import com.yunx.app.data.prefs.SettingsRepository
 
 /**
- * 动效降级开关（`docs/PORT-PLAN-1.3.0.md` §3.7）。
+ * 动效降级开关。
  *
  * `reducedMotion = 软件渲染 || 用户开关「减少动画」`：
  * - 软件渲染：`RenderApiChooser` 在老显卡上把 skiko 切到 SOFTWARE，每帧 CPU 光栅化，

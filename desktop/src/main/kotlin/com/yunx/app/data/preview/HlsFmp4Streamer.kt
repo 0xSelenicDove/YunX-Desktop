@@ -12,9 +12,9 @@ import java.io.IOException
 import java.io.OutputStream
 
 /**
- * HLS 在线预览的「边下边播」重封装器（`docs/PORT-PLAN-1.3.0.md` §3.3.1 路径 2）。
+ * HLS 在线预览的「边下边播」重封装器。
  *
- * JavaFX 17/Windows 的 jfxmedia 不支持 m3u8（§9.2 探针实测），所以由本类把 m3u8 拉下来后：
+ * JavaFX 17/Windows 的 jfxmedia 不支持 m3u8（实测），所以由本类把 m3u8 拉下来后：
  * 1. 逐个下载 TS 分片，用 [TsSegmentParser] 解出视频 AU / 音频帧；
  * 2. 用 [Fmp4Builder] 重新封装成 fragmented MP4，**边转边写**进调用方给的输出流；
  * 3. 时间轴按源 PTS 归一（首个分片从 0 开始，33bit 回绕自动展开，`#EXT-X-DISCONTINUITY` 处顺延）。

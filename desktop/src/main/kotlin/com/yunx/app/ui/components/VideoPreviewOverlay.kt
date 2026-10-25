@@ -83,7 +83,7 @@ import java.util.Locale
  *
  * 播放内核是 JavaFX `MediaView`，通过 [SwingPanel] 把 `JFXPanel` 嵌进 Compose：
  * 实测 MediaView 必须挂在「可见窗口的 Scene」里，否则 jfxmedia 的视频 preroll 会随机死锁
- * （`docs/PORT-PLAN-1.3.0.md` §9.2），这里 JFXPanel + 真实窗口天然满足。
+ * （实测结论），这里 JFXPanel + 真实窗口天然满足。
  *
  * 播放源由 [prepareSource] 决定，单文件 MP4 与 HLS 都走「本地临时文件 + `file:` URI」：
  * - 单文件 MP4（含 B 站 [VideoMedia.previewUrl] 合好的 mp4）→ [Mp4PreviewSession]
@@ -530,7 +530,7 @@ private class FxVideoController(private val panel: JFXPanel) {
     /**
      * 跳转到指定位置。
      *
-     * 两个约束（`docs/PORT-PLAN-1.3.0.md` §9.2 实测）：
+     * 两个约束（实测结论）：
      * 1. Windows 上播放中 seek 不可靠，必须先 `pause` 再 `seek`（JDK 记录的稳定交互是「暂停 → 拖 → 播放」）；
      * 2. 连续快速拖动时**不能每拖一次就下发一次 seek**——jfxmedia 的音频时钟会被拖坏，
      *    听感上就是音频被降速（慢放变调）。所以这里把拖动去抖合并：新的拖动只更新

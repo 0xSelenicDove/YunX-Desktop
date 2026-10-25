@@ -6,9 +6,8 @@ import java.io.ByteArrayOutputStream
  * fragmented MP4（ISO/IEC 14496-12）封装器：把「H.264 + AAC」访问单元输出成
  * `ftyp + moov(mvex/trex) + 逐段 moof+mdat` 的**渐进式**字节流。
  *
- * 为什么需要它：JavaFX 17/Windows 的 jfxmedia 不能播 HLS/m3u8（实测见
- * `docs/PORT-PLAN-1.3.0.md` §9.2），AcFun 在线预览只能由 [HlsFmp4Streamer] 把
- * TS 分片边下载边重封装成 fMP4 喂给播放器。
+ * 为什么需要它：JavaFX 17/Windows 的 jfxmedia 不能播 HLS/m3u8（实测），AcFun 在线预览只能由
+ * [HlsFmp4Streamer] 把 TS 分片边下载边重封装成 fMP4 喂给播放器。
  *
  * 关键约定：
  * - 初始化段里 `mvhd/mdhd` 的 duration 写 0（直播形态），时长由播放器按已到达的分片推算；

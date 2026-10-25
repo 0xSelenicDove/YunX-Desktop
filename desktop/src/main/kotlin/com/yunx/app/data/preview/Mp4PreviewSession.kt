@@ -34,7 +34,7 @@ private const val MAX_REDIRECTS = 5
  * 单文件 MP4 在线预览会话：**边下载边落盘，播放器读本地 `file:` URI**。
  *
  * 为什么不是回环 HTTP 代理：实测 jfxmedia 对 `127.0.0.1` 的流式响应（chunked 或定长都一样）
- * 会间歇性报 `ERROR_MEDIA_INVALID`——同一个文件用 `file:` 打开从不失败（`docs/PORT-PLAN-1.3.0.md` §9.2）。
+ * 会间歇性报 `ERROR_MEDIA_INVALID`——同一个文件用 `file:` 打开从不失败（实测）。
  * 所以这里绕开传输层，直接把字节写到临时文件，让播放器读 `file:`。
  *
  * 起播时机（[prepare] 内阻塞判定，调用方在 IO 线程执行）：
