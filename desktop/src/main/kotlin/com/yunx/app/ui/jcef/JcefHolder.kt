@@ -57,13 +57,20 @@ object JcefHolder {
                     }
                     killStaleJcefHelpers()
                     val builder = CefAppBuilder()
-                    builder.setInstallDir(File(AppContext.cacheDir, "jcef-bundle"))
+                    val installDir = File(AppContext.cacheDir, "jcef-bundle")
+                    builder.setInstallDir(installDir)
+                    // 发布包带的是 app\jcef-natives.tar.xz（不含原生 jar）：
+                    // 自己解包到 installDir 后让 jcefmaven 跳过安装步骤。开发运行无此压缩包，
+                    // ensureInstalled 返回 false，仍由 jcefmaven 从 classpath 的原生 jar 安装。
+                    if (JcefNativesInstaller.ensureInstalled(installDir)) {
+                        builder.setSkipInstallation(true)
+                    }
                     if (noSandbox) {
                         // 受限/沙箱环境（如 CI）下 Chromium 进程沙箱拿不到目录授权，禁用之（仅诊断冒烟用）
                         builder.addJcefArgs("--no-sandbox")
                     }
                     val settings = builder.getCefSettings()
-                    // 发布包只随带 locales/zh-CN.pak（见 portable-package.ps1 [2c/5]），
+                    // 发布包只随带 locales/zh-CN.pak（见 tools/JcefNativesPacker.kt），
                     // 这里显式指定 locale，避免按系统语言去找不存在的语言包
                     settings.locale = "zh-CN"
                     settings.windowless_rendering_enabled = false
