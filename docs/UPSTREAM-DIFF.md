@@ -404,7 +404,6 @@
 ### 9.14 本次对齐（上游 1.3.0 十连提交 `0a7c71e` ~ `3e51a4d`）
 
 本轮覆盖 #183 ~ #204（视频解析 + 下载链路 + 播放器 + 细节），对齐点由 `cad7718` 推进到 **`3e51a4d`**。
-方案与实测结论见 [1.3.0 移植方案](PORT-PLAN-1.3.0.md)。
 
 #### 已移植
 
@@ -418,7 +417,7 @@
 | B站登录 + DASH 高清（#188） | 登录同视频账号体系；DASH 取音视频分轨直链，**`DashMuxer` 用 mp4parser 重写**（Android MediaCodec 无桌面等价物）。M1.5 探针用真实样本验证：双轨齐全、时长差 0.154s |
 | 小红书去水印（#189） | 图集地址换算原图 CDN（`sns-img-bd.xhscdn.com/<图片ID>`）；原图 404 时回退平台地址，并以 `notice` 提示降级张数 |
 | 动图 Live Photo（#202） | 微博 `videoSrc` / 抖音动图解析 + `MotionPhotoWriter` 合成单张 JPEG（保活元数据丢弃，观感一致） |
-| 预览播放器（#183） | **桌面重写**（ExoPlayer → JavaFX）：MP4 走本地回环代理（注入 `Referer`/`UA`/`Cookie` + Range 透传）；HLS 走自研 TS→fMP4 重封装并写本地增长文件实现边下边播（jfxmedia 不播 m3u8、也不吃 HTTP fMP4，见 PORT-PLAN §9.2）。控制条常显：播放/暂停、进度、倍速、静音、全屏 |
+| 预览播放器（#183） | **桌面重写**（ExoPlayer → JavaFX）：MP4 走本地回环代理（注入 `Referer`/`UA`/`Cookie` + Range 透传）；HLS 走自研 TS→fMP4 重封装并写本地增长文件实现边下边播（jfxmedia 不播 m3u8、也不吃 HTTP fMP4）。控制条常显：播放/暂停、进度、倍速、静音、全屏 |
 | 抖音隐藏 WebView（#183） | `HeadlessWebView` 重写为 JCEF 隐藏浏览器 + `CefMessageRouter`（`cefQuery` 回传替代 `evaluateJavascript` 回调），仅在 SSR 路线失败时兜底 |
 | 图标 48→40dp（#185） | 视频平台 Logo 40dp；网盘账号头像 48→40dp 对齐 |
 | 版本 1.3.0（#186） | `version.txt` / 构建版本号 1.3.0 |
