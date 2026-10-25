@@ -33,6 +33,7 @@ import com.yunx.app.data.network.Pan115Constants
 import com.yunx.app.data.network.Pan123Constants
 import com.yunx.app.data.network.QuarkConstants
 import com.yunx.app.data.network.QuarkCdn
+import com.yunx.app.data.network.GitHubMirror
 import com.yunx.app.data.network.ShareLinkParser
 import com.yunx.app.data.network.SharePlatform
 import com.yunx.app.data.network.StarSeaApi
@@ -110,8 +111,8 @@ class ResolveViewModel(
     private val linkHistoryDao: LinkHistoryDao,
     /** GitHub 解析器实例（null 表示未启用 GitHub 平台） */
     private val githubApi: GitHubApi? = null,
-    /** GitHub 下载镜像前缀提供者（由上层从设置注入用户配置；空串=使用内置默认镜像） */
-    private val mirrorPrefixProvider: () -> String = { UpdateChecker.MIRROR_PREFIX },
+    /** GitHub 下载镜像前缀提供者（由上层从设置注入；默认走 GitHubMirror 自动选最快或用户固定） */
+    private val mirrorPrefixProvider: () -> String = { GitHubMirror.activePrefix() },
     /**
      * 取链方式提供者（由上层从设置注入）：
      * true = 夸克免转存（直接换直链，不写入网盘，默认）；false = 先转存到临时目录再取链。
@@ -2101,7 +2102,7 @@ class ResolveViewModel(
         private val bookmarkDao: BookmarkDao,
         private val linkHistoryDao: LinkHistoryDao,
         private val githubApi: GitHubApi? = null,
-        private val mirrorPrefixProvider: () -> String = { UpdateChecker.MIRROR_PREFIX },
+        private val mirrorPrefixProvider: () -> String = { GitHubMirror.activePrefix() },
         private val noSaveDownloadProvider: () -> Boolean = { true },
         /** 设置仓库：默认直接读偏好，MainScreen 无需改动；多账号 / 多源开关改完即时生效 */
         private val settings: SettingsRepository = SettingsRepository(),

@@ -12,6 +12,7 @@ import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.application
 import kotlinx.coroutines.launch
 import com.yunx.app.data.network.XunleiDeviceFingerprint
+import com.yunx.app.data.network.video.HeadlessWebView
 import com.yunx.app.ui.MainScreen
 import com.yunx.app.ui.clipboard.ClipboardLinkController
 import com.yunx.app.ui.jcef.JcefHolder
@@ -145,6 +146,10 @@ fun main(args: Array<String>) {
             // 窗口出现后再后台启动 JCEF，登录页通过 browserReady 状态自动切换
             androidx.compose.runtime.LaunchedEffect(Unit) {
                 JcefHolder.initInBackground()
+                // 预热抖音解析用的隐藏浏览器：实测单次解析耗时几乎全在 Chromium
+                // 冷启动与 acrawler 挑战上（诊断日志 1.8~9.4s），提前把浏览器与站点
+                // Cookie 热起来，用户真正粘贴链接时即可省掉这段冷启动。
+                HeadlessWebView.prewarm("https://www.douyin.com/")
             }
             // 启动淡入：窗口 displayable 后压 0 → 等内容就绪 → 渐入
             androidx.compose.runtime.LaunchedEffect(Unit) {

@@ -71,6 +71,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.mikepenz.markdown.m3.Markdown
 import com.yunx.app.data.db.BookmarkEntity
 import com.yunx.app.data.network.GitHubLinkParser
+import com.yunx.app.data.network.GitHubMirror
 import com.yunx.app.data.network.ShareLinkParser
 import com.yunx.app.data.network.video.VideoLinkParser
 import com.yunx.app.data.network.SharePlatform
@@ -296,11 +297,8 @@ fun ResolveScreen(
                                     val processed = remember(md, owner, repo, branch, isDarkTheme) {
                                         GitHubMarkdownImageTransformer.preprocessReadme(md, owner, repo, branch, isDarkTheme)
                                     }
-                                    // 注入自研图片加载器的镜像前缀（用户自定义；未配置则直连，与上游一致）
-                                    GitHubMarkdownImageTransformer.mirrorPrefix = remember {
-                                        com.yunx.app.data.prefs.SettingsRepository()
-                                            .githubMirrorPrefix?.ifBlank { null }
-                                    }
+                                    // 注入自研图片加载器的镜像前缀（自动选最快 / 用户固定，统一走 GitHubMirror）
+                                    GitHubMarkdownImageTransformer.mirrorPrefix = GitHubMirror.activePrefix()
                                     // 紧凑字号：与桌面排版体系一致（见 ui/theme/Type.kt）
                                     val compactTypography = remember { compactMarkdownTypography() }
                                     Markdown(

@@ -322,9 +322,10 @@ private fun FeatureCard() {
         "网盘分享解析" to "夸克 / UC / 迅雷 / 百度 / 139 / 123 / 115 / 光鸭 / 蓝奏云 / 蓝奏云优享版 分享直链识别",
         "视频链接解析" to "哔哩哔哩 / 小红书 / 抖音 / 微博 / 快手 / AcFun / Pixiv；短链、口令、整段文案均可",
         "高速分片下载" to "多线程并发 + 断点续传 + 慢连接自动换线；B 站高清分轨两轨并行后自动合轨",
-        "在线预览" to "视频边下边播（倍速 / 全屏 / 拖动），图片可缩放查看",
+        "在线预览" to "ffplay 直读直链、真·边下边播（HLS 原生支持）；没装 FFmpeg 时回退内置播放器并可一键下载",
         "Live 图" to "微博 / 抖音动图可存为动态照片、静态图片或视频",
         "多账号与备份" to "网盘与视频平台均支持多账号（主账号 / 备注），认证信息可加密导出 / 导入",
+        "引擎管理" to "FFmpeg（预览 / 合轨）与 Gopeed 内核集中下载·更新·卸载，装到应用私有目录，不改系统环境变量",
         "凭证本地化" to "Cookie / Token 加密落库，仅存本机"
     )
     SectionCard {
@@ -368,7 +369,7 @@ private fun FeatureCard() {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TechCard() {
-    val techs = listOf("Kotlin", "Compose Multiplatform", "Material 3", "SQLite", "OkHttp", "JavaFX Media", "JCEF")
+    val techs = listOf("Kotlin", "Compose Multiplatform", "Material 3", "SQLite", "OkHttp", "FFmpeg", "JavaFX Media", "JCEF")
     SectionCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             CardIcon(Icons.Outlined.Code)

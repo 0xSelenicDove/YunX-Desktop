@@ -74,11 +74,13 @@
 
 - **分享链接解析** —— 识别夸克 / UC / 迅雷 / 百度 / 139 / 123 / 115 / 光鸭 / 蓝奏云 / 蓝奏云优享版 分享链接并自动匹配提取码，另支持 GitHub 仓库 / 账号 / 文件直链
 
-- **视频解析与预览** —— 粘贴抖音 / 快手 / 微博 / 小红书 / B站 / AcFun / Pixiv 作品链接（短链、口令、整段文案均可）即可解析；内置 JavaFX 播放器在线预览（倍速 / 全屏，AcFun m3u8 边下边播），图集可放大查看，下载支持 DASH 合轨与 Live Photo 动图合成（可存动态照片 / 静图 / 视频）
+- **视频解析与预览** —— 粘贴抖音 / 快手 / 微博 / 小红书 / B站 / AcFun / Pixiv 作品链接（短链、口令、整段文案均可）即可解析；在线预览优先用 **ffplay** 直读直链（真·边下边播，HLS 原生支持），本机没装 FFmpeg 时回退内置播放器并可一键下载引擎到应用私有目录（不改系统环境变量）；图集可放大查看，下载支持 DASH 合轨（优先 ffmpeg `-c copy`）与 Live Photo 动图合成（可存动态照片 / 静图 / 视频）
 
 - **高速下载** —— Range 分片并发 + 断点续传 + 慢连接自动换线 + 全局限速；B 站高清分轨两轨并行下载后自动合轨
 
-- **GitHub 浏览与 README 渲染** —— 浏览仓库文件树 / Releases / 账号仓库列表，README 与更新说明以 GFM Markdown 渲染（支持镜像加速）
+- **GitHub 浏览与 README 渲染** —— 浏览仓库文件树 / Releases / 账号仓库列表，README 与更新说明以 GFM Markdown 渲染
+
+- **GitHub 下载镜像自动测速** —— 内置五个 gh-proxy 系镜像，下载前并发实测每个镜像的延迟与下载速度，按速度自动选最快（设置页可看 ping / 速度、手动刷新、固定某个或自定义前缀），更新包 / 视频引擎 / Gopeed 内核 / README 图片统一走该镜像
 
 - **通知中心进度** —— 下载进度实时显示为 Windows 通知中心 toast 进度条（多任务聚合 + 实时速度）
 
@@ -90,7 +92,9 @@
 
 - **桌面体验** —— 深色模式 + 自定义种子色、链接收藏、解析历史、窗口内弹窗覆盖层
 
-- **网络** —— GitHub 下载镜像前缀、HTTP 代理（便于加速或直连受限的场景）
+- **网络** —— GitHub 下载镜像（自动测速选最快 / 固定预选 / 自定义前缀）、HTTP 代理（便于加速或直连受限的场景）
+
+- **引擎管理** —— 下载引擎（Gopeed 内核）与视频预览引擎（FFmpeg 精简版）集中管理，可下载 / 更新 / 卸载并查看路径与来源
 
 完整功能清单见 **[功能清单](docs/FEATURES.md)**。
 
@@ -108,6 +112,7 @@
 | 持久化         | `sqlite-jdbc`（SQLite）+ `java.util.prefs`           |
 | 网络          | OkHttp 4.12.0（请求 + 分片下载）                           |
 | 内嵌浏览器       | JCEF 132（Chromium）                                 |
+| 视频预览        | ffplay（FFmpeg 套件，边下边播）+ JavaFX Media（兜底）        |
 | 原生桥接        | JNA（Win32 API）+ 自编 `darkmode.dll`                  |
 | 构建分发        | Gradle + jlink + jpackage + Inno Setup             |
 | Markdown 渲染 | multiplatform-markdown-renderer（GFM：README / 更新说明） |

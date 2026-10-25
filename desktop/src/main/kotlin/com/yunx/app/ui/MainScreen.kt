@@ -74,6 +74,7 @@ import com.yunx.app.data.gopeed.GopeedEngine
 import com.yunx.app.data.network.BaiduApi
 import com.yunx.app.data.network.C139Api
 import com.yunx.app.data.network.GitHubApi
+import com.yunx.app.data.network.GitHubMirror
 import com.yunx.app.data.network.GitHubTokenStore
 import com.yunx.app.data.network.GuangYaApi
 import com.yunx.app.data.network.HttpClients
@@ -636,8 +637,8 @@ fun MainScreen(
             db.bookmarkDao(),
             db.linkHistoryDao(),
             githubApi,
-            // GitHub 镜像前缀：用户自定义优先，未配置时用内置默认镜像
-            { settings.githubMirrorPrefix?.ifBlank { null } ?: UpdateChecker.MIRROR_PREFIX },
+            // GitHub 镜像前缀：自动（实测选最快）或用户手动固定，统一由 GitHubMirror 解析
+            { GitHubMirror.activePrefix() },
             // 取链方式开关：设置页「免转存下载」实时生效
             { settings.quarkNoSaveDownload }
         )
@@ -861,6 +862,9 @@ fun MainScreen(
 
     // 启动时同步一次「Gopeed 内核是否已导入」（进程内状态与磁盘事实对齐，供引擎页与分流判断使用）
     LaunchedEffect(Unit) { GopeedEngine.syncInstalledState() }
+
+    // 启动时按需刷新 GitHub 镜像测速（结果过期或从未测过才跑，避免每次启动都测速）
+    LaunchedEffect(Unit) { GitHubMirror.ensureFresh() }
 
     /**
      * 启动自动检查更新（整个会话只跑一次）。
@@ -1330,6 +1334,10 @@ fun MainScreen(
         // 放在根部最后 → 绘制在所有内容（含全屏覆盖层）之上。
         OverlayDialogHost()
 
+        // 引擎安装提示（视频预览 / DASH 合轨缺 FFmpeg 时询问是否下载）：
+        // 合轨在后台线程触发，必须挂在根部常驻组合里才弹得出来。
+        EngineInstallPromptHost()
+
         // 关闭确认弹窗（退出 / 最小化到托盘 / 取消）
         CloseConfirmDialog(
             visible = showCloseDialog,
@@ -1500,10 +1508,10 @@ fun MainScreen(
                             currentTab = MainTab.Download
                         }
                     },
-                    // 镜像站下载：用设置里的自定义镜像前缀（未配置则用默认），GitHub 直连作为失败回退
+                    // 镜像站下载：用当前生效的镜像前缀（自动选最快 / 用户固定），GitHub 直连作为失败回退
                     onDownloadMirrorAsset = { url, name ->
                         startupUpdateRelease = null
-                        val prefix = settings.githubMirrorPrefix?.ifBlank { null } ?: UpdateChecker.MIRROR_PREFIX
+                        val prefix = GitHubMirror.activePrefix()
                         scope.launch {
                             downloadManager.enqueue(
                                 url = UpdateChecker.mirrorUrl(url, prefix),
