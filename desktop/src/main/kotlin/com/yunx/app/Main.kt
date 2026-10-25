@@ -227,7 +227,7 @@ private fun loadWindowIcon(): androidx.compose.ui.graphics.painter.Painter? = ru
  */
 private fun runJcefSmoke(url: String) {
     println("SMOKE: init JCEF...")
-    JcefHolder.initBlocking(noSandbox = true)
+    JcefHolder.initBlocking()
     val app = JcefHolder.app()
     if (app == null) {
         println("SMOKE: JCEF init FAILED")

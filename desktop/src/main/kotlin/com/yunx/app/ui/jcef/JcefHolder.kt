@@ -45,7 +45,7 @@ object JcefHolder {
     private val lock = Any()
     private var initThread: Thread? = null
 
-    fun initBlocking(noSandbox: Boolean = false) {
+    fun initBlocking() {
         synchronized(lock) {
             if (browserReady) return
             var lastError: Throwable? = null
@@ -64,10 +64,6 @@ object JcefHolder {
                     // ensureInstalled 返回 false，仍由 jcefmaven 从 classpath 的原生 jar 安装。
                     if (JcefNativesInstaller.ensureInstalled(installDir)) {
                         builder.setSkipInstallation(true)
-                    }
-                    if (noSandbox) {
-                        // 受限/沙箱环境（如 CI）下 Chromium 进程沙箱拿不到目录授权，禁用之（仅诊断冒烟用）
-                        builder.addJcefArgs("--no-sandbox")
                     }
                     val settings = builder.getCefSettings()
                     // 发布包只随带 locales/zh-CN.pak（见 tools/JcefNativesPacker.kt），
@@ -100,11 +96,11 @@ object JcefHolder {
      * - 上一次尝试失败后再次调用会开启新一轮重试（登录页打开时调用，见 CookieLoginContent）。
      * 完成后 [browserReady] 置为 true，登录页自动切换为内嵌浏览器模式。
      */
-    fun initInBackground(noSandbox: Boolean = false) {
+    fun initInBackground() {
         synchronized(lock) {
             if (browserReady) return
             if (initThread?.isAlive == true) return
-            initThread = Thread({ initBlocking(noSandbox) }, "JCEF-Init").apply {
+            initThread = Thread({ initBlocking() }, "JCEF-Init").apply {
                 isDaemon = true
                 start()
             }
