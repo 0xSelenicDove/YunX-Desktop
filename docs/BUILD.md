@@ -46,6 +46,35 @@ cd YunX-Desktop
 
 打包脚本会自动结束正在运行的程序实例，并在输出目录被占用时重试删除。
 
+便携包约 210MB（其中运行期 JRE 约 40MB、CEF 原生库压缩包约 88MB），体积主要来自 Chromium。
+
+## 发布包体积裁剪
+
+打包脚本只改**发布包里的文件**，不改变编译期依赖，也不改变任何功能：
+
+| 项目 | 处理 | 效果 |
+| --- | --- | --- |
+| `material-icons-extended` | 扫描所有 class 的常量池，只保留实际被引用的图标类 | 0.2 MB（完整包 36 MB） |
+| `sqlite-jdbc` | 只保留 `org/sqlite/native/Windows/x86_64` 原生库 | 2.37 → 0.75 MB |
+| `skiko-awt-runtime-windows-x64` | 从 `app\` 载荷里去掉 jar（原生库仍解到 `app\` 供加载） | −10.3 MB |
+| **CEF 原生库** | jar 内嵌 `tar.gz` 重压成 `tar.xz`（LZMA2 + BCJ），语言包只留 `zh-CN` | 131 → 88 MB |
+| `runtime\lib\jvm.lib` / `runtime\bin\splashscreen.dll` | 运行时用不到（链接期文件 / jpackage 默认启动器闪屏），jlink 后删除 | −1.2 MB |
+
+### CEF 原生库重压（tar.xz）
+
+发布包**不再**随带 `jcef-natives-*.jar`（解包后 261MB，gzip 后 120MB），而是：
+
+1. 打包时 `:desktop:exportJcefNatives` 单独导出原生 jar（`exportRuntimeLibs` 会排除它），
+   由 `JcefNativesPacker` 重压成 `app\jcef-natives.tar.xz`；
+2. 运行期首次需要内嵌浏览器时，`JcefNativesInstaller` 把它解到 `<缓存>\jcef-bundle`，
+   写 `install.lock` 与就绪标记（记录压缩包大小 / 时间，换包自动重解）；
+3. 随后 `CefAppBuilder.setSkipInstallation(true)`，jcefmaven 不再去找 classpath 里的原生 jar。
+
+开发运行（`run.ps1 run`）不吃这套：原生 jar 仍在 classpath 上，也没有这个压缩包，
+`ensureInstalled` 返回 false，行为与改动前一致。
+
+> 升级 jcef 版本只需改 `desktop/build.gradle.kts` 里的依赖坐标，打包脚本与压缩器无需改动。
+
 ## 体积与本地裁剪包
 
 `desktop/libs/` 下有三个**随仓库分发**的 jar，都是为了压缩体积或规避仓库坐标问题，改动前先读各自的说明：

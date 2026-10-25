@@ -67,7 +67,16 @@ dependencies {
         exclude(group = "me.friwi", module = "jogl-all")
         exclude(group = "me.friwi", module = "gluegen-rt")
     }
+    // ★ 原生库只在开发运行（gradle run）时由 jcefmaven 从 classpath 里取；
+    //   发布包不随带这个 120MB 的 jar，改由打包脚本用 JcefNativesPacker 重压成
+    //   app\jcef-natives.tar.xz（约 90MB，LZMA2），首次使用时由 JcefNativesInstaller 解开。
+    //   见 portable-package.ps1 [2c/5] 与 ui/jcef/JcefNativesInstaller.kt。
     implementation("me.friwi:jcef-natives-windows-amd64:jcef-1770317+cef-132.3.1+g144febe+chromium-132.0.6834.83")
+
+    // tar.xz 解压/压缩：CEF 原生库发布包（打包期压缩 + 运行期自解包）
+    implementation("org.tukaani:xz:1.10")
+    // tar 读写（XZ 只负责压缩层，tar 容器仍用 commons-compress；jcefmaven 已传递引入，这里显式声明）
+    implementation("org.apache.commons:commons-compress:1.27.1")
 
     testImplementation(kotlin("test"))
     testImplementation("junit:junit:4.13.2")
@@ -208,9 +217,17 @@ tasks.register("printRuntimeClasspath") {
 }
 
 // 导出全部运行时依赖 jar 到 build/exportLibs（供便携版打包脚本使用，规避 gradle 缓存路径漂移）
+// ★ 排除 jcef 原生包：发布包改用它重压出来的 jcef-natives.tar.xz（见 JcefNativesPacker），
+//   开发运行（:desktop:run）仍直接从运行时 classpath 取该 jar，不受影响。
 tasks.register<Sync>("exportRuntimeLibs") {
-    from(configurations.runtimeClasspath)
+    from(configurations.runtimeClasspath) { exclude("jcef-natives-*.jar") }
     into(layout.projectDirectory.dir("build/exportLibs"))
+}
+
+// 单独导出 jcef 原生包，供打包脚本重压成 tar.xz
+tasks.register<Sync>("exportJcefNatives") {
+    from(configurations.runtimeClasspath) { include("jcef-natives-*.jar") }
+    into(layout.projectDirectory.dir("build/jcefNatives"))
 }
 
 compose.desktop {
