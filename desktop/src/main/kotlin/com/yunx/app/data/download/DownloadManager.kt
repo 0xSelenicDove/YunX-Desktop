@@ -10,8 +10,10 @@ import com.yunx.app.util.WindowsKeepAwake
 import com.yunx.app.util.WindowsToastNotifier
 import com.yunx.app.data.db.DownloadTaskDao
 import com.yunx.app.data.db.DownloadTaskEntity
+import com.yunx.app.data.preview.FfplayManager
 import com.yunx.app.data.security.FileCredentialCipher
 import com.yunx.app.data.security.CredentialCipher
+import com.yunx.app.ui.EngineInstallPrompt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
@@ -2488,10 +2490,13 @@ class DownloadManager(
             // 合轨阶段没有字节流动，速度归零（否则界面会一直显示上一个采样值）
             _stats.update { it + (id to DownloadStats(0L, -1L, workers)) }
 
-            // 合轨阶段（90%~100%）：DashMuxer 的进度回调不是挂起函数，进度先落在 AtomicLong，
+            // 合轨阶段（90%~100%）：合轨的进度回调不是挂起函数，进度先落在 AtomicLong，
             // 由同一协程作用域里的 ticker 节流写库（回调里直接写库就得 runBlocking 阻塞 IO 线程）。
             val muxRatio = AtomicLong(0L)
             val muxLastAt = AtomicLong(0L)
+            val onMuxRatio: (Float) -> Unit = { p ->
+                muxRatio.set((p.coerceIn(0f, 1f) * 1000).toInt().toLong())
+            }
             val muxOk = coroutineScope {
                 val ticker = launch {
                     while (true) {
@@ -2506,9 +2511,20 @@ class DownloadManager(
                 }
                 try {
                     withContext(Dispatchers.IO) {
-                        DashMuxer.mux(videoFile, audioFile, mergedFile) { p ->
-                            muxRatio.set((p.coerceIn(0f, 1f) * 1000).toInt().toLong())
+                        // 合轨引擎：ffmpeg 为主（只重封装），缺引擎 / 失败时退回内置纯 Java 合轨。
+                        val ffmpeg = FfplayManager.locateFfmpeg()
+                        if (ffmpeg != null) {
+                            Log.d(TAG, "dashMergeDownload: id=$id 使用 ffmpeg 合轨 ${ffmpeg.absolutePath}")
+                            if (FfmpegMuxer.mux(videoFile, audioFile, mergedFile, onMuxRatio)) {
+                                return@withContext true
+                            }
+                            Log.w(TAG, "dashMergeDownload: id=$id ffmpeg 合轨失败，退回内置 Java 合轨")
+                        } else {
+                            // 缺引擎：只提示不阻塞 —— 本次照常用内置 Java 合轨完成；
+                            // 用户同意后后台下载引擎，之后的任务会自动切回 ffmpeg。
+                            EngineInstallPrompt.ask(EngineInstallPrompt.Reason.MERGE)
                         }
+                        DashMuxer.mux(videoFile, audioFile, mergedFile, onMuxRatio)
                     }
                 } finally {
                     ticker.cancel()

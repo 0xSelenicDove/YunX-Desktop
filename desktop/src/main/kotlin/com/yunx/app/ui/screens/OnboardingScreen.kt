@@ -480,7 +480,7 @@ private fun FeaturesPage() {
         FeatureRow(
             icon = Icons.Outlined.Storage,
             title = "在线预览与 Live 图",
-            description = "视频可直接在线播放（倍速 / 全屏 / 拖动）；微博、抖音动图可存为动态照片、静图或视频"
+            description = "视频直读直链、边下边播（HLS 原生支持，可全屏 / 拖动）；首次预览缺引擎时会询问是否下载 FFmpeg，装完自动起播；微博、抖音动图可存为动态照片、静图或视频"
         )
         FeatureRow(
             icon = Icons.Outlined.Lock,

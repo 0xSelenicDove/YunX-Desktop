@@ -73,6 +73,28 @@ class AppDatabase private constructor(private val conn: Connection) {
             val dbFile = File(AppContext.dbDir, "yunx.db")
             dbFile.parentFile?.mkdirs()
 
+            // ==== TEMP DIAG (remove) ====
+            System.err.println("[YunX-DIAG] dataDir=" + AppContext.dataDir.absolutePath)
+            System.err.println("[YunX-DIAG] dbDir=" + AppContext.dbDir.absolutePath)
+            System.err.println("[YunX-DIAG] dbFile=" + dbFile.absolutePath + " exists=" + dbFile.exists() +
+                " isFile=" + dbFile.isFile + " len=" + dbFile.length() +
+                " canRead=" + dbFile.canRead() + " canWrite=" + dbFile.canWrite())
+            System.err.println("[YunX-DIAG] dbDir exists=" + AppContext.dbDir.exists() +
+                " isDir=" + AppContext.dbDir.isDirectory + " canWrite=" + AppContext.dbDir.canWrite())
+            System.err.println("[YunX-DIAG] userHome=" + System.getProperty("user.home") +
+                " userDir=" + System.getProperty("user.dir") +
+                " tmpdir=" + System.getProperty("java.io.tmpdir") +
+                " jnu=" + System.getProperty("sun.jnu.encoding") +
+                " fileEnc=" + System.getProperty("file.encoding"))
+            System.err.println("[YunX-DIAG] envYunxDataDir=" + System.getenv("YUNX_DESKTOP_DATA_DIR"))
+            runCatching {
+                val wal = File(AppContext.dbDir, "yunx.db-wal")
+                val created = wal.createNewFile()
+                System.err.println("[YunX-DIAG] createWal created=" + created + " exists=" + wal.exists())
+                runCatching { wal.delete() }
+            }.onFailure { System.err.println("[YunX-DIAG] createWal FAILED: " + it) }
+            // ==== END TEMP DIAG ====
+
             // 自愈：进程被强杀/崩溃后，WAL 的 -shm（共享内存索引）可能损坏或 mmap 失败
             // （SQLITE_IOERR_SHMMAP），表现为应用启动即崩。-shm 可由 sqlite 随时重建
             // （-wal 仍会回放，近期数据不丢）；若 -wal 本身也损坏，第二轮连 -wal 一起删，
@@ -168,6 +190,10 @@ class AppDatabase private constructor(private val conn: Connection) {
                     lastError = e
                     runCatching { conn?.close() }
                     Log.e(TAG, "database open attempt ${attempt + 1} failed: ${e.message}")
+                    // ==== TEMP DIAG (remove) ====
+                    System.err.println("[YunX-DIAG] attempt=" + (attempt + 1) + " connNull=" + (conn == null))
+                    e.printStackTrace()
+                    // ==== END TEMP DIAG ====
                     runCatching {
                         when (attempt) {
                             0 -> {

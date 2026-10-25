@@ -1,6 +1,6 @@
 # 下载引擎维护指南（2026-10 变更）
 
-> 适用版本：1.2.9（2026-10-21 构建）
+> 适用版本：1.3.0（2026-10-25 构建）
 > 本文覆盖本轮四项改动：Issue #17 缓存/磁盘保护、Issue #12 夸克/UC 分页、任务级保存目录、实验性直写。
 > 目标：以后改下载逻辑或排查问题时，能快速定位「数据从哪来、写到哪、失败后留下什么」。
 
@@ -339,7 +339,7 @@ $env:PATH="C:\Windows\System32;"+$env:PATH
 
 - 便携版：`release\YunX-Desktop\YunX-Desktop.exe`
 - 安装包：`release\YunX-Desktop-setup-<version>.exe`
-- 版本号唯一来源：根目录 `version.txt`（当前 1.2.9）。
+- 版本号唯一来源：根目录 `version.txt`（当前 1.3.0）。
 - 安装包未做代码签名，首次运行可能触发 SmartScreen。
 
 ---
@@ -385,4 +385,4 @@ $env:PATH="C:\Windows\System32;"+$env:PATH
 - 完整测试套件 51 个测试通过（含 6 个直写端到端测试、2 个 Gopeed 文件夹显示测试、3 个文件夹分组键测试）。
 - 旧 schema 数据库启动后自动补 `saveDir` / `directPart` / `directMode` 列，应用正常打开。
 - 安装包已实际启动验证（数据库、暗色模式、JCEF 正常）。
-- 当前安装包：`release\YunX-Desktop-setup-1.2.9.exe`，约 202 MB。
+- 当前安装包：`release\YunX-Desktop-setup-1.3.0.exe`。
