@@ -20,6 +20,7 @@ import com.yunx.app.ui.theme.ComposeEmptyActivityTheme
 import com.yunx.app.util.DarkMode
 import com.yunx.app.util.DesktopActions
 import com.yunx.app.util.RenderApiChooser
+import com.yunx.app.util.SingleInstance
 import com.yunx.app.util.TrayManager
 import com.yunx.app.util.Win32PopupMenu
 import com.yunx.app.util.WindowFx
@@ -34,6 +35,16 @@ fun main(args: Array<String>) {
 
     // 桌面上下文初始化（数据目录等）
     AppContext.init()
+
+    // 单实例：第二个实例只把已有窗口还原到前台，然后自身退出。
+    // ★ 必须做：两个实例共用同一数据目录时，CEF 的用户数据目录（cache\jcef）会撞车 ——
+    //   Chromium 是单例进程模型，第二个实例抢不到 profile 锁会走它自己的「已有实例」处理，
+    //   实测会把第一个实例的渲染 / 网络子进程杀掉（jcef.log：Tab Killed / Network service crashed），
+    //   个别机器上还会被 Chromium 反向拉起系统里注册的浏览器。
+    if (!SingleInstance.acquire()) {
+        SingleInstance.focusExistingWindow()
+        return
+    }
 
     // ★ 老旧 / 基础显示适配器（如 ATI Radeon 3000）上，OPENGL(ANGLE) 会出现「界面有形状、
     //   但一个文字都不渲染」，这类设备由 [RenderApiChooser] 自动退到 SOFTWARE。
