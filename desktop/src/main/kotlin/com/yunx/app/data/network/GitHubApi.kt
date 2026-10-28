@@ -12,7 +12,7 @@ import org.json.JSONObject
  *
  * - 未配置 Token：限额 60 次/小时/IP；
  * - 配置 Token：限额提升至 5000 次/小时；
- * - Token 仅用于提升限额，不用于登录态；严禁打印到日志。
+ * - GitHub App 用户凭证仅能访问用户与安装授权的交集；严禁打印到日志。
  *
  * 所有方法均运行在 [Dispatchers.IO]，失败（网络异常 / 非 2xx / JSON 解析失败）返回 null。
  */
@@ -20,7 +20,7 @@ class GitHubApi(
     private val clientProvider: () -> OkHttpClient = { HttpClients.apiClient() },
     private val tokenProvider: () -> String? = { null }
 ) {
-    /** 每次请求动态获取全局客户端（忽略 SSL 开关切换即时生效） */
+    /** 每次请求动态获取使用系统证书校验的全局客户端 */
     private val client get() = clientProvider()
 
     /**
@@ -31,12 +31,14 @@ class GitHubApi(
      */
     var onUnauthorized: (() -> Unit)? = null
 
-    private var unauthorizedNotified = false
+    private var unauthorizedToken: String? = null
 
     /** 统一检查响应码：401 → 清空缓存（失败条目会缓存 1 分钟，不清会让「修好之后」仍失败）并通知上层 */
     private fun noteResponseCode(code: Int) {
-        if (code != 401 || unauthorizedNotified) return
-        unauthorizedNotified = true
+        if (code != 401) return
+        val fingerprint = tokenFingerprint()
+        if (unauthorizedToken == fingerprint) return
+        unauthorizedToken = fingerprint
         GitHubResponseCache.clear()
         onUnauthorized?.invoke()
     }
@@ -102,7 +104,9 @@ class GitHubApi(
             runCatching {
                 val raw = cachedBody(
                     "userrepos:$owner:$page:${tokenFingerprint()}",
-                    "https://api.github.com/users/$owner/repos?per_page=100&page=$page&sort=updated"
+                    if (!tokenProvider().isNullOrBlank() && owner.equals(getUserLogin(), ignoreCase = true))
+                        "https://api.github.com/user/repos?per_page=100&page=$page&sort=updated&visibility=all"
+                    else "https://api.github.com/users/$owner/repos?per_page=100&page=$page&sort=updated"
                 ) ?: return@withContext null
                 val arr = JSONArray(raw)
                 buildList {
@@ -196,7 +200,7 @@ class GitHubApi(
     suspend fun getReadme(owner: String, repo: String, defaultBranch: String): String? =
         withContext(Dispatchers.IO) {
             // README 原文缓存；>128KB 不写缓存（防超大 README 占内存，实际极少超）
-            GitHubResponseCache.getOrFetch("readme:$owner/$repo/$defaultBranch", maxBytes = 128 * 1024) {
+            GitHubResponseCache.getOrFetch("readme:$owner/$repo/$defaultBranch:${tokenFingerprint()}", maxBytes = 128 * 1024) {
                 runCatching {
                     // 1) API readme 接口（原始 Markdown）
                     val apiRequest = Request.Builder()
@@ -260,7 +264,8 @@ class GitHubApi(
             defaultBranch = o.optString("default_branch").ifBlank { "main" },
             language = o.optString("language").ifBlank { null },
             updatedAt = o.optString("updated_at").ifBlank { null },
-            pushedAt = o.optString("pushed_at").ifBlank { null }
+            pushedAt = o.optString("pushed_at").ifBlank { null },
+            isPrivate = o.optBoolean("private", false)
         )
     }
 
@@ -276,7 +281,8 @@ class GitHubApi(
                             downloadUrl = a.optString("browser_download_url"),
                             size = a.optLong("size"),
                             contentType = a.optString("content_type").ifBlank { null },
-                            updatedAt = a.optString("updated_at").ifBlank { null }
+                            updatedAt = a.optString("updated_at").ifBlank { null },
+                            apiUrl = a.optString("url").ifBlank { null }
                         )
                     )
                 }
@@ -295,15 +301,18 @@ class GitHubApi(
     // ---------- 请求执行 ----------
 
     /** Token 短指纹：带 Token 的请求 key 拼上，换/清 Token 后旧缓存不命中、不串号 */
-    private fun tokenFingerprint(): String =
-        tokenProvider()?.takeIf { it.isNotBlank() }?.hashCode()?.toString() ?: "anon"
+    internal fun tokenFingerprint(): String =
+        tokenProvider()?.takeIf { it.isNotBlank() }?.let { token ->
+            java.security.MessageDigest.getInstance("SHA-256").digest(token.toByteArray())
+                .joinToString("") { "%02x".format(it) }
+        } ?: "anon"
 
     /**
      * 走统一缓存取 JSON 原始响应文本。非 2xx / 空 body 返回 null（失败也会被缓存短 TTL）。
      * 调用方再自行用 JSONObject/JSONArray 解析。
      */
     private suspend fun cachedBody(key: String, url: String): String? =
-        GitHubResponseCache.getOrFetch(key) {
+        GitHubResponseCache.getOrFetch("$key:${tokenFingerprint()}") {
             client.newCall(buildRequest(url)).execute().use { resp ->
                 noteResponseCode(resp.code)
                 if (!resp.isSuccessful) return@use null

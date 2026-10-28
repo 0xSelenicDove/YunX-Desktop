@@ -8,7 +8,7 @@ import com.yunx.app.util.Log
  * GitHub Token 加密存储。
  *
  * 安全说明：
- * - Token 仅用于提升 GitHub API 限额（未认证 60 次/小时/IP，认证后 5000 次/小时）；
+ * - GitHub App 用户 Token 用于读取已授权的仓库；
  * - **严禁明文存储**：统一经 [FileCredentialCipher] AES-GCM 加密（密钥不可导出）后落盘；
  * - **严禁输出到日志**，**严禁在 UI 中回显完整 Token**（输入框用 PasswordVisualTransformation）。
  *
@@ -38,10 +38,12 @@ object GitHubTokenStore {
         val trimmed = token?.trim().orEmpty()
         if (trimmed.isEmpty()) {
             prefs.remove(KEY_TOKEN)
+            GitHubResponseCache.clear()
             return true
         }
         return runCatching {
             prefs.put(KEY_TOKEN, cipher.encrypt(trimmed, PURPOSE))
+            GitHubResponseCache.clear()
             true
         }.getOrElse {
             // 加密失败（密钥暂时不可用）：保留原值，不要覆盖成空

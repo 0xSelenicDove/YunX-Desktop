@@ -39,8 +39,13 @@ fun GitHubSignInDialog(onDismiss: () -> Unit, onSignedIn: () -> Unit) {
         title = { Text("登录 GitHub") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("在浏览器中登录 GitHub 并确认验证码。仅用于浏览公开仓库和提高 API 限额，不申请仓库写入权限。",
+                Text("在浏览器中登录 GitHub 并确认验证码。GitHub App 仅申请仓库内容和元数据的只读权限；私有仓库由你在 GitHub 选择。",
                     style = MaterialTheme.typography.bodyMedium)
+                TextButton(onClick = { DesktopActions.openUrl(GitHubDeviceAuth.INSTALL_URL) }) {
+                    Text("选择 / 管理可访问的仓库")
+                }
+                Text("已有旧版登录？请重新登录以切换到 GitHub App。安装后返回这里完成浏览器登录。",
+                    style = MaterialTheme.typography.bodySmall)
                 code?.let { device ->
                     Text("请在 GitHub 输入以下验证码：")
                     SelectionContainer {

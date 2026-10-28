@@ -125,6 +125,8 @@ object HttpClients {
         }
         return OkHttpClient.Builder()
             .dispatcher(dispatcher)
+            .followSslRedirects(false)
+            .addInterceptor(GitHubDownloadAuth())
             // 空闲连接池收紧：默认 128 条 × 5 分钟会常驻 socket，下载是突发式，1 分钟足够复用
             .connectionPool(
                 ConnectionPool(

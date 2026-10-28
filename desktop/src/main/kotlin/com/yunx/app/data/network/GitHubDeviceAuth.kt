@@ -92,8 +92,9 @@ class GitHubDeviceAuth(
         }
 
     companion object {
-        // Public identifier for the fork-owned OAuth app; not a secret.
-        const val CLIENT_ID = "Ov23li2lXv7Bhf7sJmFR"
+        // Public identifier for the fork-owned GitHub App; not a secret.
+        const val CLIENT_ID = "Iv23lionn3rHqrghzMgm"
+        const val INSTALL_URL = "https://github.com/apps/yunx-read-only-selenicdove/installations/new"
         const val VERIFICATION_URL = "https://github.com/login/device"
     }
 }

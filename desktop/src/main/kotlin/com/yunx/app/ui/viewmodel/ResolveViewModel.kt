@@ -970,6 +970,7 @@ class ResolveViewModel(
 
     /** 当前浏览的 GitHub 仓库（仓库根目录/代码/Releases 时非空） */
     private var currentGitHubRepo: GitHubRepo? = null
+    private val githubTreePaths = mutableMapOf<String, String>()
 
     /** 当前浏览的 GitHub 账号/组织（账号仓库列表时非空） */
     private var currentGitHubOwner: String? = null
@@ -1108,6 +1109,7 @@ class ResolveViewModel(
                         return@launch
                     }
                     session = ShareSession(shareId = "github:${repo.fullName}", stoken = "", title = repo.fullName)
+                    githubTreePaths.clear()
                     currentGitHubRepo = repo
                     currentDirFid = "github:root"
                     runCatching { recordLinkHistory(repo.fullName) }
@@ -1155,6 +1157,7 @@ class ResolveViewModel(
                 return@launch
             }
             session = ShareSession(shareId = "github:${repo.fullName}", stoken = "", title = repo.fullName)
+            githubTreePaths.clear()
             currentGitHubRepo = repo
             currentDirFid = "github:root"
             loadGitHubRoot()
@@ -1195,11 +1198,15 @@ class ResolveViewModel(
     /** 代码目录：tree（不 recursive）映射为文件夹/文件；根代码目录首项加源码 ZIP */
     private suspend fun loadGitHubCodeDir(sha: String) {
         val repo = currentGitHubRepo ?: return
-        val entries = githubApi?.getTree(repo.owner, repo.name, sha)
+        val parentPath = githubTreePaths[sha].orEmpty()
+        val entries = githubApi?.getTree(repo.owner, repo.name, sha)?.map { entry ->
+            entry.copy(path = if (parentPath.isEmpty()) entry.path else "$parentPath/${entry.path}")
+        }
         if (entries == null) {
             uiState = ResolveUiState.Error("加载目录失败")
             return
         }
+        entries.filter { it.type == "tree" }.forEach { githubTreePaths[it.sha] = it.path }
         // 目录令牌：每次加载自增；异步时间请求回来时比对，防止切换目录后旧结果串层
         val dirToken = ++githubDirToken
         val files = mutableListOf<ShareFile>()
@@ -1345,7 +1352,7 @@ class ResolveViewModel(
         githubBadges = emptyMap()
         val files = rel.assets.map { a ->
             ShareFile(
-                fid = "github:asset:${a.downloadUrl}",
+                fid = "github:asset:${if (currentGitHubRepo?.isPrivate == true) a.apiUrl ?: a.downloadUrl else a.downloadUrl}",
                 fname = a.name,
                 fsize = a.size,
                 isdir = false,
@@ -1391,6 +1398,7 @@ class ResolveViewModel(
         for (r in currentGitHubRepos) {
             val fid = "github:repo:${r.fullName}"
             val parts = buildList {
+                if (r.isPrivate) add("私有")
                 if (r.fork) add("Fork")
                 r.language?.let { add(it) }
             }
@@ -1400,7 +1408,7 @@ class ResolveViewModel(
         val files = currentGitHubRepos.map { r ->
             ShareFile(
                 fid = "github:repo:${r.fullName}",
-                fname = r.name,
+                fname = if (r.owner.equals(owner, ignoreCase = true)) r.name else r.fullName,
                 fsize = -1,
                 isdir = true,
                 pdirFid = "",
@@ -1448,6 +1456,7 @@ class ResolveViewModel(
                     uiState = ResolveUiState.Error("无法打开仓库：$fullName")
                     return
                 }
+                githubTreePaths.clear()
                 currentGitHubRepo = repo
                 githubReadme = null
                 loadGitHubRoot()
@@ -1459,7 +1468,14 @@ class ResolveViewModel(
     /** 根据 GitHub fid 计算下载直链（raw / codeload / asset url / 直链）；无法识别返回 null */
     private fun githubUrlForFid(fid: String): String? {
         val repo = currentGitHubRepo ?: return null
-        val branch = repo.defaultBranch
+        val branch = encodePath(repo.defaultBranch)
+        if (repo.isPrivate) return when {
+            fid == "github:zip" -> "https://api.github.com/repos/${repo.fullName}/zipball/$branch"
+            fid.startsWith("github:file:") ->
+                "https://api.github.com/repos/${repo.fullName}/contents/${encodePath(fid.removePrefix("github:file:"))}?ref=$branch"
+            fid.startsWith("github:asset:") -> fid.removePrefix("github:asset:")
+            else -> null
+        }
         return when {
             fid == "github:zip" ->
                 "https://codeload.github.com/${repo.owner}/${repo.name}/zip/refs/heads/$branch"
@@ -1478,7 +1494,7 @@ class ResolveViewModel(
      * 文件名含 `#`/`?`/空格/中文等字符时，未编码会导致 URL 在 `#`/`?` 处截断。
      */
     private fun encodePath(path: String): String =
-        path.split('/').joinToString("/") { java.net.URLEncoder.encode(it, "UTF-8") }
+        path.split('/').joinToString("/") { java.net.URLEncoder.encode(it, "UTF-8").replace("+", "%20") }
 
     /**
      * GitHub 批量下载：选中的叶子文件直接入队；代码文件夹（github:code:*）递归 getTree 收集 blob；
@@ -1512,7 +1528,7 @@ class ResolveViewModel(
                         file.fid.startsWith("github:release:") -> {
                             val tag = file.fid.removePrefix("github:release:")
                             currentGitHubReleases.firstOrNull { it.tagName == tag }?.assets?.forEach { a ->
-                                tasks.add(Triple(a.downloadUrl, a.name, a.size))
+                                tasks.add(Triple(if (currentGitHubRepo?.isPrivate == true) a.apiUrl ?: a.downloadUrl else a.downloadUrl, a.name, a.size))
                             }
                         }
                         // 其余文件夹（repo 根/账号列表/加载更多）：跳过
@@ -1533,7 +1549,7 @@ class ResolveViewModel(
                     batchProgress = "${index + 1}/${tasks.size}"
                     runCatching {
                         downloadManager.enqueue(
-                            url = UpdateChecker.mirrorUrl(t.first, prefix),
+                            url = if (t.first.startsWith("https://api.github.com/")) t.first else UpdateChecker.mirrorUrl(t.first, prefix),
                             fileName = t.second,
                             size = t.third,
                             platform = DownloadPlatform.GITHUB,
@@ -1565,20 +1581,21 @@ class ResolveViewModel(
         sha: String,
         prefix: String,
         result: MutableList<Triple<String, String, Long>>,
-        depth: Int
+        depth: Int,
+        repositoryPath: String = githubTreePaths[sha].orEmpty()
     ) {
         if (depth > 12) return
         if (batchCancelRequested) return
         val repo = currentGitHubRepo ?: return
         val entries = githubApi?.getTree(repo.owner, repo.name, sha) ?: return
-        val branch = repo.defaultBranch
         for (e in entries) {
             if (batchCancelRequested) return
             val displayName = e.path.substringAfterLast('/')
+            val path = if (repositoryPath.isBlank()) e.path else "$repositoryPath/${e.path}"
             if (e.type == "tree") {
-                collectGitHubBlobs(e.sha, if (prefix.isBlank()) displayName else "$prefix/$displayName", result, depth + 1)
+                collectGitHubBlobs(e.sha, if (prefix.isBlank()) displayName else "$prefix/$displayName", result, depth + 1, path)
             } else {
-                val url = "https://raw.githubusercontent.com/${repo.owner}/${repo.name}/$branch/${encodePath(e.path)}"
+                val url = githubUrlForFid("github:file:$path") ?: continue
                 result.add(Triple(url, if (prefix.isBlank()) displayName else "$prefix/$displayName", e.size ?: -1))
             }
         }
@@ -2027,7 +2044,7 @@ class ResolveViewModel(
                 try {
                     val prefix = mirrorPrefixProvider()
                     downloadManager.enqueue(
-                        url = UpdateChecker.mirrorUrl(link.downloadUrl, prefix),
+                        url = if (link.downloadUrl.startsWith("https://api.github.com/")) link.downloadUrl else UpdateChecker.mirrorUrl(link.downloadUrl, prefix),
                         fileName = link.filename,
                         size = link.size,
                         platform = DownloadPlatform.GITHUB,

@@ -51,7 +51,7 @@ object GitHubCommitDateCache {
      * 失败返回 null（与 [GitHubApi.getLastCommitDate] 语义一致）。
      */
     suspend fun get(owner: String, repo: String, path: String, api: GitHubApi): String? {
-        val k = key(owner, repo, path)
+        val k = "${key(owner, repo, path)}:${api.tokenFingerprint()}"
         val now = System.currentTimeMillis()
 
         // 1) 查已完成缓存

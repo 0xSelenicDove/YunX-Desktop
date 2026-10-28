@@ -156,19 +156,29 @@ SecItem API 将随机凭证主密钥保存在当前用户的 Keychain，`credent
 
 ## GitHub browser sign-in
 
-The GitHub account card uses OAuth Device Flow in the system browser. The fork-owned
-OAuth app has Device Flow enabled; its public client ID is in `GitHubDeviceAuth.kt`.
-No client secret is generated or bundled, and the default flow requests no OAuth
-scopes (public repository browsing only). Tokens use the existing encrypted token
-store. Expired tokens require signing in again; refresh tokens are not retained.
-Manual PAT entry remains under Advanced for explicitly selected private repositories.
-Fork maintainers should register their own OAuth app and replace the public client ID.
+The GitHub account card uses GitHub App Device Flow in the system browser.
+The fork-owned app, `yunx-read-only-selenicdove`, requests **Contents: read-only**
+and mandatory **Metadata: read-only**. Install it with **Only select repositories**,
+then sign in from YunX. Existing OAuth users must sign in again to migrate.
+The app registration currently permits installation only on its owner's account.
+Fork maintainers should register their own GitHub App, enable Device Flow, disable
+webhooks, retain expiring user tokens, and replace `CLIENT_ID` and `INSTALL_URL`
+in `GitHubDeviceAuth.kt`. No client secret or private key is bundled or needed
+by the desktop device flow.
+
+Tokens use the existing encrypted store. Expired tokens require signing in again;
+refresh tokens are not retained. Manual PAT entry remains under Advanced.
+The signed-in home lists repositories accessible to that credential, including
+selected private repositories. Private downloads use GitHub API endpoints directly,
+bypassing mirrors. Download credentials are loaded at request time, never stored
+in task URLs or headers; OkHttp strips Authorization on cross-origin CDN redirects.
+Response and commit-date caches are isolated by credential.
 
 The OAuth HTTP client retains standard certificate verification, rejects redirects,
 and cancels polling when the dialog closes. Focused checks:
 
 ```sh
-./run.sh :desktop:test --tests '*GitHubDeviceAuthTest'
+./run.sh :desktop:test --tests '*GitHub*Test'
 ```
 
 Service logos are bundled for offline use in both account layouts. Their official

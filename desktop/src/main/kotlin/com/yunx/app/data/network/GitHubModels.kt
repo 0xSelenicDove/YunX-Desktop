@@ -24,7 +24,8 @@ data class GitHubRepo(
     /** 仓库元数据更新时间（API updated_at，ISO8601，可能为 null） */
     val updatedAt: String? = null,
     /** 最近一次 push 时间（API pushed_at，ISO8601；用于 ZIP 条目时间，可能为 null） */
-    val pushedAt: String? = null
+    val pushedAt: String? = null,
+    val isPrivate: Boolean = false
 ) {
     /** 仓库属主（从 fullName = "owner/repo" 拆分）；异常 fullName 兜底为整串，避免返回空串导致后续 URL 拼错 */
     val owner: String get() {
@@ -66,5 +67,6 @@ data class GitHubAsset(
     val size: Long,
     val contentType: String?,
     /** 资产更新时间（API updated_at，ISO8601，可能为 null） */
-    val updatedAt: String? = null
+    val updatedAt: String? = null,
+    val apiUrl: String? = null
 )
