@@ -52,6 +52,8 @@ class GitHubPrivateAccessTest {
         get("https://api.github.com/repos/team/selected/contents/file.txt?ref=main")
         assertEquals("Bearer first-token", sent.last().header("Authorization"))
         assertEquals("application/vnd.github.raw+json", sent.last().header("Accept"))
+        get("https://api.github.com/repos/team/selected/zipball/main")
+        assertEquals("application/vnd.github+json", sent.last().header("Accept"))
         token = "second-token"
         get("https://api.github.com/repos/team/selected/releases/assets/1")
         assertEquals("Bearer second-token", sent.last().header("Authorization"))

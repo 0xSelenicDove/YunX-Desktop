@@ -12,8 +12,11 @@ class GitHubDownloadAuth(private val tokenProvider: () -> String? = GitHubTokenS
             !url.encodedPath.startsWith("/repos/") || request.method !in setOf("GET", "HEAD")) {
             return chain.proceed(request)
         }
-        val accept = if (url.pathSegments.getOrNull(3) == "contents")
-            "application/vnd.github.raw+json" else "application/octet-stream"
+        val accept = when (url.pathSegments.getOrNull(3)) {
+            "contents" -> "application/vnd.github.raw+json"
+            "releases" -> "application/octet-stream"
+            else -> "application/vnd.github+json"
+        }
         val builder = request.newBuilder().header("Accept", accept)
         tokenProvider()?.takeIf { it.isNotBlank() }?.let { builder.header("Authorization", "Bearer $it") }
         // OkHttp removes Authorization on cross-origin redirects to GitHub's download CDN.
