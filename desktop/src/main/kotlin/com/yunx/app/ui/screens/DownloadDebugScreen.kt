@@ -1,5 +1,6 @@
 package com.yunx.app.ui.screens
 
+import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,7 +22,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Download
-import androidx.compose.material.icons.outlined.InsertDriveFile
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
@@ -301,7 +301,7 @@ private fun DebugTaskCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                imageVector = Icons.Outlined.InsertDriveFile,
+                imageVector = Icons.AutoMirrored.Outlined.InsertDriveFile,
                 contentDescription = null,
                 modifier = Modifier.size(22.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant

@@ -463,7 +463,9 @@ fun StorageSettingsPanel(
                             }
                         }) { Text("打开所在文件夹") }
                         Spacer(Modifier.height(4.dp))
-                        HintRow("搬迁时会连同 credential.key 一起搬走 —— 库里的凭证是用它加密的，分开会全部解不开。")
+                        HintRow(if (System.getProperty("os.name").startsWith("Mac") && encLevel == DbEncryptionLevel.STRICT)
+                            "搬迁时保留 yunx.db 和 credential.key；还需保留 macOS 钥匙串中的 YunX 密钥。仅复制文件不能恢复账号，换机器前请导出加密账号备份。"
+                        else "搬迁时会连同 credential.key 一起搬走 —— 库里的凭证是用它加密的，分开会全部解不开。")
                         if (encLevel.isMachineBound && !samePath(configuredDbDir, defaultDbDir)) {
                             Spacer(Modifier.height(6.dp))
                             HintRow(
@@ -941,7 +943,9 @@ private fun levelDescription(level: DbEncryptionLevel, supported: Boolean): Stri
     DbEncryptionLevel.NORMAL ->
         "库明文 · 凭证列加密 · 密钥用本机派生密钥包裹（绑定本机，换机器解不开）"
     DbEncryptionLevel.STRICT ->
-        "库明文 · 凭证列加密 · 密钥用 Windows DPAPI 保护（绑定当前 Windows 用户）"
+        if (System.getProperty("os.name").startsWith("Mac"))
+            "库明文 · 凭证列加密 · 主密钥保存在 macOS 钥匙串（Keychain）中"
+        else "库明文 · 凭证列加密 · 密钥用 Windows DPAPI 保护（绑定当前 Windows 用户）"
     DbEncryptionLevel.STRICTEST ->
         if (supported) "库整体加密 + DPAPI 保护密钥" else "库整体加密（SQLCipher）—— 暂未支持"
 }
@@ -956,7 +960,10 @@ private fun levelWarning(target: DbEncryptionLevel): String = when (target) {
             "⚠ 之后把数据库/密钥拷到别的电脑、或重装系统，凭证将无法解密（表现为网盘账号全部未登录，需重新登录）。\n" +
             "如果需要便携使用，请保持「宽松」。"
     DbEncryptionLevel.STRICT ->
-        "密钥将用 **Windows DPAPI** 保护：绑定当前 Windows 用户。\n" +
+        if (System.getProperty("os.name").startsWith("Mac"))
+            "主密钥将保存在 **macOS 钥匙串（Keychain）** 中，credential.key 只保存引用。\n" +
+                "钥匙串锁定或拒绝访问时不会更换密钥。换机器或恢复备份还需要对应钥匙串项目；建议先导出加密账号备份。"
+        else "密钥将用 **Windows DPAPI** 保护：绑定当前 Windows 用户。\n" +
             "⚠ 换 Windows 用户、重装系统或换机器后，凭证将无法解密（需重新登录）。\n" +
             "如果需要便携使用，请保持「宽松」。"
     DbEncryptionLevel.STRICTEST ->

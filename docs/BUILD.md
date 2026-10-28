@@ -120,3 +120,36 @@ Get-ChildItem desktop\src\main\kotlin -Recurse -Filter *.kt | ForEach-Object {
 | `launcher/` | 自研启动器（C# 编译为无控制台窗口的 exe；固定读取 `app\YunX-Desktop.cfg`，改 exe 名或放在中文路径下都不会失效，同时负责启动闪屏与主窗口交叉淡入） |
 | `installer/` | Inno Setup 脚本与中文语言包 |
 | `docs/` | 文档（见 [README](../README.md#文档)） |
+
+## 本地 macOS 开发运行
+
+本分支支持 macOS 原版 Compose 界面。使用 JDK 17：
+
+```sh
+./run.sh :desktop:run    # JVM 开发运行；签名校验应使用下方的 .app 构建验证
+./run.sh :desktop:test --tests '*MacWindowAccessTest' --tests '*MacHelperTest' --tests '*DbKeyStoreTest' --tests '*SecureAccountDaosTest'
+# 打包需要受 jpackage 支持的发行版（例如 Eclipse Temurin 17），通过 JAVA_HOME 指定：
+JAVA_HOME=/path/to/temurin-17/Contents/Home ./run.sh :desktop:createDistributable
+open desktop/build/compose/binaries/main/app/YunX-Desktop.app
+```
+
+本工作区可用的 Temurin 路径为 `.tmp/jdk-17.0.21+9/Contents/Home`。
+macOS 使用对应架构的 SQLite、JavaFX 和 JCEF 152 原生库，不编译 Windows 的 darkmode.dll。
+Windows 保持 JCEF 132。macOS 的浏览器配置已由新版 Chromium 更新，不应再用旧版打开。
+
+macOS 修复包含：
+- JCEF 文档要求的三个 AWT 模块访问参数，防止登录页 `IllegalAccessError` 导致界面冻结。
+- 从固定版本 sources jar 重编译 `CefClient`，移除 `onGotFocus` 中重复请求焦点的递归调用。
+- `.app` 构建后规范化 Info.plist 并重新做本地签名，通过 `codesign --verify --deep --strict`；Chromium 使用实际主应用 bundle。
+- 从同一 JCEF commit 重建 helper，在音频服务加载 Chromium 前设置 macOS daemon 状态，保留 sandbox 初始化代码。
+  ARM64 签名 helper 随源码放在 `desktop/libs/jcef-helper-macos-arm64.zip`；重建或在 Intel Mac 构建时运行 `desktop/macos/build-helper.sh`（需要 CMake、Xcode 命令行工具，首次下载 CEF SDK 较大）。
+  helper 在运行时验证签名，不注入动态库、不过滤日志、不跳过证书校验。
+
+注意：上游 JCEF 的 `native/context.cpp` 原本就设置 `settings.no_sandbox = true`；本补丁未新增该设置，
+但不能将此构建描述为启用了 Chromium sandbox。macOS 本地签名也不是 Developer ID 公证发行签名。
+
+macOS 的“普通”档使用 IOPlatformUUID 派生密钥；“较为严格”档通过 Security.framework 的
+SecItem API 将随机凭证主密钥保存在当前用户的 Keychain，`credential.key` 只保存随机项目引用。
+钥匙串锁定、拒绝授权或项目丢失时不轮换主密钥、不覆盖引用文件。历史项目保留供旧数据库备份使用。
+仅复制数据库与引用文件不足以在另一台 Mac 恢复账号；换机前应导出应用内的加密账号备份。
+这些档位均不会加密数据库中的文件名、URL 等元数据，SQLCipher 整库加密仍未实现。

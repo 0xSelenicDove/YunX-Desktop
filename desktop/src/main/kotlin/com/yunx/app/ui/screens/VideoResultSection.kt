@@ -46,7 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
+import com.yunx.app.ui.components.rememberClasspathPainter
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -207,7 +207,7 @@ private fun ResultTopBar(result: VideoParseResult, onBack: () -> Unit) {
         }
         // 平台 Logo：按图标自身形状原样画（不裁圆、不垫底色）
         Image(
-            painter = painterResource(result.platform.logoAsset()),
+            painter = rememberClasspathPainter(result.platform.logoAsset()),
             contentDescription = null,
             modifier = Modifier.size(40.dp),
             contentScale = ContentScale.Fit

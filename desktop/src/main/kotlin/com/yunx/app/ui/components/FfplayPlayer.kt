@@ -1,5 +1,7 @@
 package com.yunx.app.ui.components
 
+import androidx.compose.material.icons.automirrored.rounded.VolumeUp
+import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -18,8 +20,6 @@ import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.FullscreenExit
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.VolumeOff
-import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -264,7 +264,7 @@ private fun FfplayControls(
             Spacer(Modifier.width(4.dp))
             IconButton(onClick = { controller.toggleMute() }) {
                 Icon(
-                    imageVector = if (controller.muted) Icons.Rounded.VolumeOff else Icons.Rounded.VolumeUp,
+                    imageVector = if (controller.muted) Icons.AutoMirrored.Rounded.VolumeOff else Icons.AutoMirrored.Rounded.VolumeUp,
                     contentDescription = if (controller.muted) "取消静音" else "静音",
                     tint = Color.White
                 )

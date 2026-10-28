@@ -1,5 +1,6 @@
 package com.yunx.app.ui.screens
 
+import androidx.compose.material.icons.automirrored.outlined.DriveFileMove
 import com.yunx.app.ui.SnackbarController
 import com.yunx.app.ui.BackHandler
 import com.yunx.app.ui.theme.Motion
@@ -34,7 +35,6 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.CreateNewFolder
-import androidx.compose.material.icons.outlined.DriveFileMove
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Refresh
@@ -371,7 +371,7 @@ fun BaiduCloudScreen(
                                 MultiSelectAction("分享", Icons.Outlined.Share, MaterialTheme.colorScheme.primary) {
                                     showShare = true
                                 },
-                                MultiSelectAction("移动", Icons.Outlined.DriveFileMove, MaterialTheme.colorScheme.primary) {
+                                MultiSelectAction("移动", Icons.AutoMirrored.Outlined.DriveFileMove, MaterialTheme.colorScheme.primary) {
                                     viewModel.openMoveRoot()
                                     showMove = true
                                 },
@@ -618,7 +618,7 @@ private fun BaiduActionSheet(
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
-                            imageVector = if (file.isdir) Icons.Outlined.DriveFileMove else Icons.Outlined.Download,
+                            imageVector = if (file.isdir) Icons.AutoMirrored.Outlined.DriveFileMove else Icons.Outlined.Download,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onPrimaryContainer
                         )
@@ -649,7 +649,7 @@ private fun BaiduActionSheet(
                 }
             }
             BaiduActionItem(Icons.Outlined.Share, "分享", "生成分享链接（带提取码）", MaterialTheme.colorScheme.primary, onShare)
-            BaiduActionItem(Icons.Outlined.DriveFileMove, "移动到", "移动到网盘的其他目录", MaterialTheme.colorScheme.primary, onMove)
+            BaiduActionItem(Icons.AutoMirrored.Outlined.DriveFileMove, "移动到", "移动到网盘的其他目录", MaterialTheme.colorScheme.primary, onMove)
             BaiduActionItem(Icons.Outlined.Edit, "重命名", "修改文件名", MaterialTheme.colorScheme.primary, onRename)
             if (onMultiSelect != null) {
                 BaiduActionItem(Icons.Outlined.CheckCircle, "多选", "勾选多个项目批量下载 / 分享 / 移动 / 删除", MaterialTheme.colorScheme.primary, onMultiSelect)
@@ -813,7 +813,7 @@ private fun BaiduMoveSheet(
                 },
                 modifier = Modifier.fillMaxWidth().height(50.dp)
             ) {
-                Icon(Icons.Outlined.DriveFileMove, contentDescription = null, modifier = Modifier.size(18.dp))
+                Icon(Icons.AutoMirrored.Outlined.DriveFileMove, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("移动到此处（$dirName）")
             }

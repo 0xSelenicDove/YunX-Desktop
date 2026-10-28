@@ -7,6 +7,7 @@ import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.util.zip.ZipInputStream
 
 /**
  * JCEF 原生库的「首次使用自解包」。
@@ -22,6 +23,32 @@ import java.io.FileOutputStream
  * [ensureInstalled] 返回 false，行为与改动前完全一致（由 jcefmaven 自己装）。
  */
 object JcefNativesInstaller {
+
+    /** Signed helper rebuilt from the pinned upstream source; no runtime injection. */
+    fun installMacHelper(installDir: File) {
+        val resource = checkNotNull(javaClass.getResourceAsStream("/jcef-helper-macos.zip")) {
+            "Missing macOS JCEF helper; rebuild it with desktop/macos/build-helper.sh"
+        }
+        val root = File(installDir, "jcef Helper.app").canonicalFile
+        ZipInputStream(resource).use { zip ->
+            while (true) {
+                val entry = zip.nextEntry ?: break
+                val target = File(installDir, entry.name).canonicalFile
+                check(target.toPath().startsWith(root.toPath())) { "Invalid helper archive path" }
+                if (entry.isDirectory) continue
+                val bytes = zip.readBytes()
+                if (!target.isFile || !target.readBytes().contentEquals(bytes)) {
+                    target.parentFile.mkdirs()
+                    target.writeBytes(bytes)
+                }
+            }
+        }
+        check(File(root, "Contents/MacOS/jcef Helper").setExecutable(true))
+        val validation = ProcessBuilder("/usr/bin/codesign", "--verify", "--deep", "--strict", root.path)
+            .redirectErrorStream(true).start()
+        val output = validation.inputStream.bufferedReader().use { it.readText() }
+        check(validation.waitFor() == 0) { "JCEF helper signature validation failed: $output" }
+    }
 
     private const val TAG = "YunX-Jcef"
 

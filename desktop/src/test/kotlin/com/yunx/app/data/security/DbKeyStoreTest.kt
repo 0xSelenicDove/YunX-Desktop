@@ -55,4 +55,28 @@ class DbKeyStoreTest {
         assertTrue(DbEncryptionLevel.STRICT.isMachineBound)
         assertFalse("宽松档必须能跨机器使用，不能被判为绑定本机", DbEncryptionLevel.LOOSE.isMachineBound)
     }
+    @Test
+    fun `macOS Keychain preserves key across level switches and missing items fail closed`() {
+        org.junit.Assume.assumeTrue(MacKeychain.isMac)
+        val file = File(tmp.root, "keychain-test.key")
+        val original = DbKeyStore.loadOrCreate(file, DbEncryptionLevel.NORMAL)
+        DbKeyStore.switchLevel(file, DbEncryptionLevel.NORMAL, DbEncryptionLevel.STRICT)
+        val marker = file.readText()
+        assertTrue(marker.startsWith("yunx:key:keychain:v1:"))
+        val id = marker.removePrefix("yunx:key:keychain:v1:")
+        try {
+            assertArrayEquals(original, DbKeyStore.loadOrCreate(file, DbEncryptionLevel.STRICT))
+            DbKeyStore.switchLevel(file, DbEncryptionLevel.STRICT, DbEncryptionLevel.NORMAL)
+            assertArrayEquals(original, DbKeyStore.loadOrCreate(file, DbEncryptionLevel.NORMAL))
+        } finally {
+            MacKeychain.deleteTestItem(id)
+        }
+        file.writeText(marker)
+        val failure = runCatching {
+            DbKeyStore.switchLevel(file, DbEncryptionLevel.STRICT, DbEncryptionLevel.NORMAL)
+        }.exceptionOrNull()
+        assertTrue(failure is MacKeychain.Unavailable)
+        assertEquals(marker, file.readText())
+    }
+
 }

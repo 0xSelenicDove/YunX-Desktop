@@ -51,7 +51,9 @@ internal class FileCredentialCipher : CredentialCipher {
         retry.getOrNull()?.let { return it }
 
         val error = retry.exceptionOrNull() ?: IllegalStateException("credential key unavailable")
-        if (isTransient(error)) throw error
+        if (isTransient(error) || runCatching {
+                keyFile.readText().startsWith("yunx:key:keychain:v1:")
+            }.getOrDefault(false)) throw error
 
         Log.e(TAG, "凭证密钥确实解不开（${error.message}），改用新密钥：旧文件保留为 ${keyFile.name}.unreadable")
         runCatching {

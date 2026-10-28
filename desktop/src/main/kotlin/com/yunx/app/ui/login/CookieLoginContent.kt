@@ -1,5 +1,6 @@
 package com.yunx.app.ui.login
 
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import com.yunx.app.ui.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -15,7 +16,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.OpenInNew
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -202,7 +202,7 @@ fun CookieLoginContent(
                     onClick = { DesktopActions.openUrl(loginUrl) },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Icon(Icons.Outlined.OpenInNew, contentDescription = null)
+                    Icon(Icons.AutoMirrored.Outlined.OpenInNew, contentDescription = null)
                     Spacer(modifier = Modifier.size(6.dp))
                     Text("打开网页登录")
                 }

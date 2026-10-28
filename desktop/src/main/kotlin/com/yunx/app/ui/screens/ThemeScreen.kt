@@ -91,7 +91,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogWindow
 import com.yunx.app.ui.theme.ThemeController
 import com.yunx.app.ui.theme.readableSeedForeground
 
@@ -531,7 +531,7 @@ private fun ColorPickerDialog(
         mutableStateOf(colorToHex(currentColor).removePrefix("#"))
     }
 
-    Dialog(onCloseRequest = onDismiss) {
+    DialogWindow(onCloseRequest = onDismiss) {
         Card(
             modifier = Modifier
                 .fillMaxWidth()

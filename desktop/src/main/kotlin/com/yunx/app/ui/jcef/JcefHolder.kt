@@ -55,15 +55,30 @@ object JcefHolder {
                         Log.w(TAG, "JCEF init retry #$attempt")
                         Thread.sleep(600L * (attempt - 1))
                     }
+                    checkMacWindowAccess()
                     killStaleJcefHelpers()
                     val builder = CefAppBuilder()
-                    val installDir = File(AppContext.cacheDir, "jcef-bundle")
+                    val bundleName = if (System.getProperty("os.name").startsWith("Mac")) "jcef-bundle-macos-152" else "jcef-bundle"
+                    val installDir = File(AppContext.cacheDir, bundleName)
                     builder.setInstallDir(installDir)
+                    if (System.getProperty("os.name").startsWith("Mac")) {
+                        // jcefmaven prepends the helper as main-bundle-path. Override it with
+                        // the actual signed app bundle so Chromium validates the correct Info.plist.
+                        System.getProperty("jpackage.app-path")?.let { executable ->
+                            val bundle = File(executable).parentFile.parentFile.parentFile
+                            check(bundle.name.endsWith(".app") && File(bundle, "Contents/Info.plist").isFile)
+                            builder.addJcefArgs("--main-bundle-path=${bundle.absolutePath}")
+                        }
+                    }
                     // 发布包带的是 app\jcef-natives.tar.xz（不含原生 jar）：
                     // 自己解包到 installDir 后让 jcefmaven 跳过安装步骤。开发运行无此压缩包，
                     // ensureInstalled 返回 false，仍由 jcefmaven 从 classpath 的原生 jar 安装。
                     if (JcefNativesInstaller.ensureInstalled(installDir)) {
                         builder.setSkipInstallation(true)
+                    }
+                    if (System.getProperty("os.name").startsWith("Mac")) {
+                        builder.install()
+                        JcefNativesInstaller.installMacHelper(installDir)
                     }
                     val settings = builder.getCefSettings()
                     // 发布包只随带 locales/zh-CN.pak（见 tools/JcefNativesPacker.kt），
@@ -87,6 +102,15 @@ object JcefHolder {
             }
             initFailure = lastError
             Log.e(TAG, "JCEF init failed after $MAX_INIT_ATTEMPTS attempts, fallback to paste mode")
+        }
+    }
+
+    internal fun checkMacWindowAccess() {
+        if (!System.getProperty("os.name").startsWith("Mac")) return
+        val desktop = java.awt.Component::class.java.module
+        val jcef = CefApp::class.java.module
+        check(listOf("sun.awt", "sun.lwawt", "sun.lwawt.macosx").all { desktop.isOpen(it, jcef) }) {
+            "JCEF macOS window access is not configured. Launch with run.sh or the packaged app."
         }
     }
 

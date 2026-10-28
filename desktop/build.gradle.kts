@@ -6,7 +6,55 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val isMac = System.getProperty("os.name").startsWith("Mac")
+val macJcefJvmArgs = listOf(
+    "--add-opens=java.desktop/sun.awt=ALL-UNNAMED",
+    "--add-opens=java.desktop/sun.lwawt=ALL-UNNAMED",
+    "--add-opens=java.desktop/sun.lwawt.macosx=ALL-UNNAMED"
+)
+val isArm64 = System.getProperty("os.arch") in listOf("aarch64", "arm64")
+val javafxPlatform = if (isMac) (if (isArm64) "mac-aarch64" else "mac") else "win"
+val jcefPlatform = if (isMac) (if (isArm64) "macosx-arm64" else "macosx-amd64") else "windows-amd64"
+
+// Patch the pinned upstream macOS API, keeping the rest of the dependency intact.
+// CefClient.onGotFocus -> setFocus -> onGotFocus recurses on AppKit (StackOverflowError).
+val macJcefVersion = "jcef-17e805a+cef-152.0.6+g708dc14+chromium-152.0.7977.83"
+val macJcefApi by configurations.creating { isTransitive = false }
+val macJcefSources by configurations.creating { isTransitive = false }
+val patchedJcefSource = layout.buildDirectory.dir("generated/jcef")
+val patchMacJcef by tasks.registering {
+    inputs.files(macJcefSources)
+    outputs.dir(patchedJcefSource)
+    doLast {
+        val source = zipTree(macJcefSources.singleFile).matching { include("org/cef/CefClient.java") }.singleFile.readText()
+        val old = "        browser.setFocus(true);"
+        check(source.split(old).size == 2) { "Upstream JCEF focus code changed; review the patch" }
+        val target = patchedJcefSource.get().file("org/cef/CefClient.java").asFile
+        target.parentFile.mkdirs()
+        target.writeText(source.replace(old, "        // AppKit already granted focus; requesting it here recursively re-enters this callback.")
+            .replace("new Integer(identifier)", "Integer.valueOf(identifier)"))
+    }
+}
+val compileMacJcef by tasks.registering(JavaCompile::class) {
+    dependsOn(patchMacJcef)
+    source(patchedJcefSource)
+    classpath = macJcefApi
+    destinationDirectory.set(layout.buildDirectory.dir("classes/patchedJcef"))
+    options.release.set(17)
+}
+val macJcefJar by tasks.registering(Jar::class) {
+    dependsOn(compileMacJcef)
+    archiveFileName.set("jcef-api-macos-patched.jar")
+    from({ zipTree(macJcefApi.singleFile) }) { exclude("org/cef/CefClient*.class") }
+    from(compileMacJcef.flatMap { it.destinationDirectory })
+}
+
 dependencies {
+    if (isMac) {
+        macJcefApi("me.friwi:jcef-api:$macJcefVersion")
+        macJcefSources("me.friwi:jcef-api:$macJcefVersion:sources")
+        implementation(files(macJcefJar))
+    }
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)
     // ★ 图标：**不要**改回 compose.materialIconsExtended —— 完整包有 36 MB（5000+ 图标），
@@ -26,21 +74,24 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.9.0")
 
     // Room -> 纯 JDBC SQLite
-    // ★ 用裁剪后的本地 jar：官方包 13.6 MB，含六个平台的原生库，本项目只跑 Windows。
-    //   只保留 org/sqlite/native/Windows（x86/x86_64/arm/arm64），其余代码与 META-INF 原样保留。
-    implementation(files("libs/sqlite-jdbc-3.47.1.0-win.jar"))
+    // Windows 使用裁剪包；macOS 使用包含对应原生库的官方包。
+    if (isMac) {
+        implementation("org.xerial:sqlite-jdbc:3.47.1.0")
+    } else {
+        implementation(files("libs/sqlite-jdbc-3.47.1.0-win.jar"))
+    }
     // Android 内置 org.json 的 JVM 等价物
     implementation("org.json:json:20240303")
+    runtimeOnly("org.slf4j:slf4j-jdk14:2.0.16")
     // 主题种子色（material-color-utilities 无公开仓库坐标；从 material 1.14.0 AAR 解包 classes.jar 本地引入）
     implementation(files("libs/material-color-utilities-1.0.0.jar"))
 
     // JavaFX MediaView 播放器（M6）：JFXPanel 经 SwingPanel 嵌入 Compose。
-    // 版本跟随 jvmToolchain(17)；发布目标只有 Windows，直接用 :win classifier（jar 内含原生库，
-    // 首次运行由 JavaFX 自动解到用户目录缓存，jpackage 无需额外处理）
-    implementation("org.openjfx:javafx-base:17.0.13:win")
-    implementation("org.openjfx:javafx-graphics:17.0.13:win")
-    implementation("org.openjfx:javafx-media:17.0.13:win")
-    implementation("org.openjfx:javafx-swing:17.0.13:win")
+    // 版本跟随 jvmToolchain(17)，按当前系统和架构选择原生库。
+    implementation("org.openjfx:javafx-base:17.0.13:$javafxPlatform")
+    implementation("org.openjfx:javafx-graphics:17.0.13:$javafxPlatform")
+    implementation("org.openjfx:javafx-media:17.0.13:$javafxPlatform")
+    implementation("org.openjfx:javafx-swing:17.0.13:$javafxPlatform")
 
     // GFM Markdown 渲染（README / 更新说明）。注意：必须停留在 0.33.x ——
     // 0.34.0 起改用 Compose 1.8+ 的 BasicText 签名（含 TextAutoSize），与项目锁定的
@@ -60,10 +111,11 @@ dependencies {
     implementation("net.java.dev.jna:jna-platform:5.14.0")
 
     // 方案 B：内嵌 Chromium 浏览器（JCEF），jcefmaven 负责原生库装载
-    implementation("me.friwi:jcefmaven:132.3.1") {
+    implementation("me.friwi:jcefmaven:${if (isMac) "152.0.6" else "132.3.1"}") {
         // jogl / gluegen 只服务于 JCEF 的离屏渲染（OSR）；本项目用窗口态浏览器
         // （createBrowser + createImmediately），不打进安装包可省约 5.4 MB。
         // ★ 若将来改用 OSR（无窗口渲染），必须去掉这两条排除。
+        if (isMac) exclude(group = "me.friwi", module = "jcef-api")
         exclude(group = "me.friwi", module = "jogl-all")
         exclude(group = "me.friwi", module = "gluegen-rt")
     }
@@ -71,7 +123,9 @@ dependencies {
     //   发布包不随带这个 120MB 的 jar，改由打包脚本用 JcefNativesPacker 重压成
     //   app\jcef-natives.tar.xz（约 90MB，LZMA2），首次使用时由 JcefNativesInstaller 解开。
     //   见 portable-package.ps1 [2c/5] 与 ui/jcef/JcefNativesInstaller.kt。
-    implementation("me.friwi:jcef-natives-windows-amd64:jcef-1770317+cef-132.3.1+g144febe+chromium-132.0.6834.83")
+    val jcefVersion = if (isMac) "jcef-17e805a+cef-152.0.6+g708dc14+chromium-152.0.7977.83"
+        else "jcef-1770317+cef-132.3.1+g144febe+chromium-132.0.6834.83"
+    implementation("me.friwi:jcef-natives-$jcefPlatform:$jcefVersion")
 
     // tar.xz 解压/压缩：CEF 原生库发布包（打包期压缩 + 运行期自解包）
     implementation("org.tukaani:xz:1.10")
@@ -114,6 +168,7 @@ val generateAppVersion by tasks.registering {
 kotlin.sourceSets["main"].kotlin.srcDir(generateAppVersion)
 
 tasks.withType<Test> {
+    if (isMac) jvmArgs(macJcefJvmArgs)
     useJUnit()
     jvmArgs("-Dfile.encoding=UTF-8", "-Dsun.jnu.encoding=UTF-8")
 }
@@ -202,9 +257,11 @@ val compileDarkMode by tasks.registering(Exec::class) {
 
 // 开发运行（:desktop:run）时把 DLL 目录并入 java.library.path，并保留 JDK bin（jawt 等原生库）
 tasks.withType<JavaExec> {
-    dependsOn(compileDarkMode)
-    val jvmBin = File(System.getProperty("java.home"), "bin").absolutePath
-    systemProperty("java.library.path", "${nativeOutDir.absolutePath};$jvmBin")
+    if (!isMac) {
+        dependsOn(compileDarkMode)
+        val jvmBin = File(System.getProperty("java.home"), "bin").absolutePath
+        systemProperty("java.library.path", "${nativeOutDir.absolutePath}${File.pathSeparator}$jvmBin")
+    }
 }
 
 // 收集运行时依赖 jar 路径（供便携版 app-image 打包）
@@ -233,8 +290,12 @@ tasks.register<Sync>("exportJcefNatives") {
 compose.desktop {
     application {
         mainClass = "com.yunx.app.MainKt"
+        if (isMac) {
+            // Required by JCEF's macOS window integration on JDK 16+.
+            jvmArgs += macJcefJvmArgs
+        }
         nativeDistributions {
-            targetFormats(TargetFormat.Exe)
+            targetFormats(if (isMac) TargetFormat.Dmg else TargetFormat.Exe)
             // sqlite-jdbc 通过反射加载 java.sql.Driver，jlink 自动检测不到，必须显式声明；
             // jdk.httpserver 是视频预览的本地回环代理（com.sun.net.httpserver），
             // jdk.unsupported.desktop 是 JavaFX 与 Swing 互操作（JFXPanel 里的 jdk.swing.interop）——
@@ -244,12 +305,34 @@ compose.desktop {
             windows {
                 perUserInstall = true
             }
+            macOS { bundleID = "com.yunx.desktop" }
             packageName = "YunX-Desktop"
             packageVersion = appVersion
             // 注意：jpackage 参数文件解析不支持非 ASCII 描述（本机报 "Input length = 1"），描述保持纯英文
             description = "YunX-Desktop - netdisk share-link parser and high-speed downloader (desktop port of YunX for Android)"
             vendor = "YunX-Desktop"
             copyright = "Copyright (C) 2026 tidain"
+        }
+    }
+}
+
+// Chromium reconstructs the Info.plist XML for dynamic signature validation.
+// jpackage's noncanonical XML must be normalized before the final local signature.
+if (isMac) {
+    tasks.matching { it.name == "createDistributable" }.configureEach {
+        doLast {
+            val app = layout.buildDirectory.dir("compose/binaries/main/app/YunX-Desktop.app").get().asFile
+            providers.exec { commandLine("plutil", "-convert", "xml1", File(app, "Contents/Info.plist")) }.result.get().assertNormalExitValue()
+            providers.exec { commandLine("codesign", "--force", "--sign", "-", "--preserve-metadata=entitlements", app) }.result.get().assertNormalExitValue()
+            providers.exec { commandLine("codesign", "--verify", "--deep", "--strict", app) }.result.get().assertNormalExitValue()
+        }
+    }
+}
+
+if (isMac) {
+    tasks.named<ProcessResources>("processResources") {
+        from("libs/jcef-helper-macos-${if (isArm64) "arm64" else "x86_64"}.zip") {
+            rename { "jcef-helper-macos.zip" }
         }
     }
 }

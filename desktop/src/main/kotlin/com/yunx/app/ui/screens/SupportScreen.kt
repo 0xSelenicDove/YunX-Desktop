@@ -1,5 +1,6 @@
 package com.yunx.app.ui.screens
 
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import com.yunx.app.ui.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -21,7 +22,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Favorite
-import androidx.compose.material.icons.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.VolunteerActivism
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -46,7 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
+import com.yunx.app.ui.components.rememberClasspathPainter
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -189,7 +189,7 @@ fun SupportScreen(
                                 color = MaterialTheme.colorScheme.surfaceContainerHighest
                             ) {
                                 androidx.compose.foundation.Image(
-                                    painter = painterResource("sponsor_cyqawa_weixin.png"),
+                                    painter = rememberClasspathPainter("sponsor_cyqawa_weixin.png"),
                                     contentDescription = "安卓版赞赏码（点击放大）",
                                     modifier = Modifier.fillMaxSize(),
                                     contentScale = ContentScale.Fit
@@ -213,7 +213,7 @@ fun SupportScreen(
                                 color = MaterialTheme.colorScheme.surfaceContainerHighest
                             ) {
                                 androidx.compose.foundation.Image(
-                                    painter = painterResource("sponsor_tidain_weixin.png"),
+                                    painter = rememberClasspathPainter("sponsor_tidain_weixin.png"),
                                     contentDescription = "桌面端赞赏码（点击放大）",
                                     modifier = Modifier.fillMaxSize(),
                                     contentScale = ContentScale.Fit
@@ -290,7 +290,7 @@ fun SupportScreen(
                     .height(50.dp)
             ) {
                 Icon(
-                    imageVector = Icons.Outlined.OpenInNew,
+                    imageVector = Icons.AutoMirrored.Outlined.OpenInNew,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp)
                 )
@@ -311,7 +311,7 @@ fun SupportScreen(
                     .height(50.dp)
             ) {
                 Icon(
-                    imageVector = Icons.Outlined.OpenInNew,
+                    imageVector = Icons.AutoMirrored.Outlined.OpenInNew,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp)
                 )
@@ -336,7 +336,7 @@ fun SupportScreen(
                     color = MaterialTheme.colorScheme.surfaceContainerHighest
                 ) {
                     androidx.compose.foundation.Image(
-                        painter = painterResource(resName),
+                        painter = rememberClasspathPainter(resName),
                         contentDescription = "赞赏码大图",
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Fit

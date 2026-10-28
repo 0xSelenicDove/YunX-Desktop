@@ -113,6 +113,8 @@ fun main(args: Array<String>) {
     // macOS 受 AppKit 主线程约束，保持阻塞式初始化。
     val isMac = System.getProperty("os.name", "").lowercase().contains("mac")
     if (isMac) {
+        // Initialize AWT/AppKit before CEF installs its native application hooks.
+        java.awt.Toolkit.getDefaultToolkit()
         JcefHolder.initBlocking()
     }
 

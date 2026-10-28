@@ -1,5 +1,6 @@
 package com.yunx.app.ui.resolve
 
+import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
 import com.yunx.app.ui.theme.animateItemIfAllowed
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.basicMarquee
@@ -30,7 +31,6 @@ import androidx.compose.material.icons.outlined.BookmarkAdd
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.FolderOpen
-import androidx.compose.material.icons.outlined.InsertDriveFile
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Info
@@ -718,7 +718,7 @@ internal fun ShareFileRow(
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
-                        imageVector = if (file.isdir) Icons.Outlined.Folder else Icons.Outlined.InsertDriveFile,
+                        imageVector = if (file.isdir) Icons.Outlined.Folder else Icons.AutoMirrored.Outlined.InsertDriveFile,
                         contentDescription = null,
                         modifier = Modifier.size(20.dp),
                         tint = if (file.isdir) {

@@ -21,7 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
+import com.yunx.app.ui.components.rememberClasspathPainter
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.yunx.app.data.db.VideoAccountEntity
@@ -138,7 +138,7 @@ private fun VideoPlatformCardContent(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Image(
-            painter = painterResource(platform.logoAsset()),
+            painter = rememberClasspathPainter(platform.logoAsset()),
             contentDescription = null,
             modifier = Modifier
                 .size(40.dp)

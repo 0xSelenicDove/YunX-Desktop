@@ -1,0 +1,29 @@
+--- a/native/jcef_helper.cpp
++++ b/native/jcef_helper.cpp
+@@ -5,6 +5,9 @@
+ #include <fstream>
+ 
+ #include "include/cef_app.h"
++#if defined(OS_MACOSX)
++extern "C" int SetApplicationIsDaemon(unsigned char);
++#endif
+ #include "include/wrapper/cef_message_router.h"
+ #include "util.h"
+ 
+@@ -172,6 +175,16 @@
+ #else  // !defined(OS_WIN)
+ int main(int argc, char* argv[]) {
+ #if defined(OS_MACOSX)
++  // Establish daemon status before CEF loads AppKit/LaunchServices for audio.
++  for (int i = 0; i < argc; ++i) {
++    if (std::string(argv[i]) == "--utility-sub-type=audio.mojom.AudioService") {
++      const int status = SetApplicationIsDaemon(1);
++      if (status != 0) { fprintf(stderr, "Audio daemon initialization failed: %d\n", status); return 1; }
++      break;
++    }
++  }
++#endif
++#if defined(OS_MACOSX)
+ #if defined(CEF_USE_SANDBOX)
+   // Initialize the macOS sandbox for this helper process.
+   CefScopedSandboxContext sandbox_context;

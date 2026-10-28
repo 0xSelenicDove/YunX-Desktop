@@ -1,5 +1,6 @@
 package com.yunx.app.ui.screens
 
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -29,7 +30,6 @@ import androidx.compose.material.icons.outlined.DesktopWindows
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Link
-import androidx.compose.material.icons.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.Storage
@@ -48,7 +48,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.res.painterResource
+import com.yunx.app.ui.components.rememberClasspathPainter
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -169,7 +169,7 @@ private fun AppHeader(versionName: String) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Image(
-            painter = painterResource("about_icon.png"),
+            painter = rememberClasspathPainter("about_icon.png"),
             contentDescription = "云析图标",
             modifier = Modifier.size(88.dp)
         )
@@ -562,7 +562,7 @@ private fun GitHubCard() {
                 )
             }
             Icon(
-                imageVector = Icons.Outlined.OpenInNew,
+                imageVector = Icons.AutoMirrored.Outlined.OpenInNew,
                 contentDescription = null,
                 modifier = Modifier.size(18.dp),
                 tint = MaterialTheme.colorScheme.outline
@@ -618,7 +618,7 @@ private fun DesktopRepoCard() {
                 )
             }
             Icon(
-                imageVector = Icons.Outlined.OpenInNew,
+                imageVector = Icons.AutoMirrored.Outlined.OpenInNew,
                 contentDescription = null,
                 modifier = Modifier.size(18.dp),
                 tint = MaterialTheme.colorScheme.outline
@@ -675,7 +675,7 @@ private fun QQGroupCard() {
                 )
             }
             Icon(
-                imageVector = Icons.Outlined.OpenInNew,
+                imageVector = Icons.AutoMirrored.Outlined.OpenInNew,
                 contentDescription = null,
                 modifier = Modifier.size(18.dp),
                 tint = MaterialTheme.colorScheme.outline

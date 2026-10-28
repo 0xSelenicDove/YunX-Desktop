@@ -3,7 +3,7 @@ package com.yunx.app.tools
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream
-import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
+import java.util.zip.GZIPInputStream
 import org.tukaani.xz.LZMA2Options
 import org.tukaani.xz.X86Options
 import org.tukaani.xz.XZOutputStream
@@ -42,7 +42,7 @@ object JcefNativesPacker {
             val entry = zip.entries().asSequence().firstOrNull { it.name.endsWith(".tar.gz") }
                 ?: error("jar 内没有 .tar.gz: $jar")
             zip.getInputStream(entry).use { rawIn ->
-                GzipCompressorInputStream(rawIn, true).use { gzipIn ->
+                GZIPInputStream(rawIn).use { gzipIn ->
                     TarArchiveInputStream(gzipIn).use { tarIn ->
                         val xzOut = XZOutputStream(
                             BufferedOutputStream(FileOutputStream(out), BUFFER_SIZE),

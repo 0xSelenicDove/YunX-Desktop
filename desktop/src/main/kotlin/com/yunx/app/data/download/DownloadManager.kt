@@ -897,7 +897,9 @@ class DownloadManager(
             val existing = activeJobs[id]
             if (existing != null) {
                 // job 仍活跃（正在下载/收尾）：忽略本次 start，避免重复启动
-                if (existing.isCompleted && existing.getCompleted().isActive) return
+                @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+                val running = existing.isCompleted && existing.getCompleted().isActive
+                if (running) return
                 // job 已结束但 finally 尚未清理（暂停后立即恢复的残留）：
                 // 移除旧引用，继续注册新 job，保证"点开始"立即生效
                 activeJobs.remove(id)

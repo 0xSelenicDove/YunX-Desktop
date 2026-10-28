@@ -1,5 +1,7 @@
 package com.yunx.app.ui.screens
 
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
+import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
 import com.yunx.app.ui.theme.Motion
 import com.yunx.app.ui.theme.animateItemIfAllowed
 import androidx.compose.animation.AnimatedContent
@@ -37,8 +39,6 @@ import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Folder
-import androidx.compose.material.icons.outlined.InsertDriveFile
-import androidx.compose.material.icons.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
@@ -670,7 +670,7 @@ private fun DownloadSubTaskRow(
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
-                            imageVector = Icons.Outlined.InsertDriveFile,
+                            imageVector = Icons.AutoMirrored.Outlined.InsertDriveFile,
                             contentDescription = null,
                             modifier = Modifier.size(16.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -744,7 +744,7 @@ private fun DownloadSubTaskRow(
                             modifier = Modifier.size(32.dp)
                         ) {
                             Icon(
-                                Icons.Outlined.OpenInNew, contentDescription = "打开",
+                                Icons.AutoMirrored.Outlined.OpenInNew, contentDescription = "打开",
                                 tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp)
                             )
                         }
@@ -839,7 +839,7 @@ private fun DownloadTaskCard(
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
-                            imageVector = Icons.Outlined.InsertDriveFile,
+                            imageVector = Icons.AutoMirrored.Outlined.InsertDriveFile,
                             contentDescription = null,
                             modifier = Modifier.size(20.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -893,7 +893,7 @@ private fun DownloadTaskCard(
                         IconButton(onClick = {
                             openSavedFile(task.savePath)
                         }) {
-                            Icon(Icons.Outlined.OpenInNew, contentDescription = "打开", tint = MaterialTheme.colorScheme.primary)
+                            Icon(Icons.AutoMirrored.Outlined.OpenInNew, contentDescription = "打开", tint = MaterialTheme.colorScheme.primary)
                         }
                     }
                 }

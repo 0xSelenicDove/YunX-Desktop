@@ -22,7 +22,7 @@ import javax.crypto.spec.SecretKeySpec
  * | --- | --- | --- | --- |
  * | [LOOSE] 宽松 | 明文 SQLite | AES-256-GCM | **明文**（现状，换机器/便携用这档） |
  * | [NORMAL] 普通（默认） | 明文 SQLite | AES-256-GCM | 用**本机派生密钥**包裹（绑定本机） |
- * | [STRICT] 较为严格 | 明文 SQLite | AES-256-GCM | 用 **Windows DPAPI** 包裹（绑定当前 Windows 用户） |
+ * | [STRICT] 较为严格 | 明文 SQLite | AES-256-GCM | Windows DPAPI / macOS Keychain（当前系统用户） |
  * | [STRICTEST] 严格 | 整体加密（SQLCipher） | 同上 | DPAPI —— **尚未支持**，见 [isSupported] |
  *
  * ★ 关键取舍：前三档保护的都是**密钥**，库里的凭证列本来就是 AES 密文，所以**切档只需重新包裹 32 字节密钥**，
@@ -35,7 +35,11 @@ enum class DbEncryptionLevel(val id: String, val label: String) {
     STRICTEST("strictest", "严格");
 
     /** 该档位在当前系统上是否可用（严格档需要 SQLCipher 原生库，暂未支持） */
-    val isSupported: Boolean get() = this != STRICTEST
+    val isSupported: Boolean get() = when (this) {
+        STRICT -> MacKeychain.isMac || System.getProperty("os.name").startsWith("Windows")
+        STRICTEST -> false
+        else -> true
+    }
 
     /** 密钥是否绑定本机（换机器后凭证将无法解密，需重新登录） */
     val isMachineBound: Boolean get() = this == NORMAL || this == STRICT
@@ -115,7 +119,7 @@ object DbKeyStore {
         val body = wrapped.removePrefix(PREFIX)
         val actual = when {
             body.startsWith("mk:v1:") -> DbEncryptionLevel.NORMAL
-            body.startsWith("dpapi:v1:") -> DbEncryptionLevel.STRICT
+            body.startsWith("dpapi:v1:") || body.startsWith("keychain:v1:") -> DbEncryptionLevel.STRICT
             else -> throw IllegalStateException("未知的密钥封装格式")
         }
         // 封装格式自带标识，按格式解包即可；与配置档位不一致时只记一条（可能是手动改过偏好）
@@ -124,7 +128,9 @@ object DbKeyStore {
         }
         return when (actual) {
             DbEncryptionLevel.NORMAL -> unwrapMachineKey(body.removePrefix("mk:v1:"))
-            else -> unwrapDpapi(body.removePrefix("dpapi:v1:"))
+            else -> if (body.startsWith("keychain:v1:")) {
+                MacKeychain.read(body.removePrefix("keychain:v1:"))
+            } else unwrapDpapi(body.removePrefix("dpapi:v1:"))
         }.also {
             require(it.size == 32) { "invalid credential key length" }
         }
@@ -137,7 +143,9 @@ object DbKeyStore {
         val content = when (level) {
             DbEncryptionLevel.LOOSE -> key
             DbEncryptionLevel.NORMAL -> wrapMachineKey(key).toByteArray(Charsets.UTF_8)
-            DbEncryptionLevel.STRICT -> wrapDpapi(key).toByteArray(Charsets.UTF_8)
+            DbEncryptionLevel.STRICT -> (if (MacKeychain.isMac) {
+                "${PREFIX}keychain:v1:${MacKeychain.store(key)}"
+            } else wrapDpapi(key)).toByteArray(Charsets.UTF_8)
             DbEncryptionLevel.STRICTEST -> throw IllegalStateException("严格档需要 SQLCipher 支持，暂未实现")
         }
         file.parentFile?.mkdirs()
@@ -188,7 +196,7 @@ object DbKeyStore {
      *
      * 指纹只用**开机即稳定、且不随账号改名而变**的三项：Windows MachineGuid（注册表，机器唯一）+ OS + 架构。
      * ★ 刻意不掺用户名/计算机名：用户改一次计算机名就会解不开自己的凭证，代价远大于收益。
-     * 读不到 MachineGuid 时退回「主机名 + 用户名」（仍有绑定效果，但改名会失效，日志会记一条）。
+     * macOS 使用 IOPlatformUUID；无法读取时直接失败，不生成替代标识。
      */
     private fun machineKey(salt: ByteArray): SecretKeySpec {
         val spec = PBEKeySpec(machineFingerprint().toCharArray(), salt, PBKDF2_ITERATIONS, 256)
@@ -212,13 +220,24 @@ object DbKeyStore {
         append(System.getProperty("os.arch").orEmpty()).append('|')
         append(
             machineGuid() ?: throw MachineFingerprintUnavailable(
-                "暂时读不到 MachineGuid，本次不做密钥解包（下次会重试）"
+                "暂时读不到机器标识，本次不做密钥解包（下次会重试）"
             )
         )
     }
 
     /** Windows MachineGuid（HKLM\SOFTWARE\Microsoft\Cryptography），普通用户可读 */
     private fun machineGuid(): String? = runCatching {
+        if (MacKeychain.isMac) {
+            val process = ProcessBuilder("/usr/sbin/ioreg", "-rd1", "-c", "IOPlatformExpertDevice").start()
+            if (!process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)) {
+                process.destroyForcibly()
+                return@runCatching null
+            }
+            if (process.exitValue() != 0) return@runCatching null
+            val output = process.inputStream.bufferedReader().use { it.readText() }
+            return@runCatching Regex("\"IOPlatformUUID\"\\s*=\\s*\"([A-Fa-f0-9-]{36})\"")
+                .find(output)?.groupValues?.get(1)
+        }
         Advapi32Util.registryGetStringValue(
             WinReg.HKEY_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Cryptography", "MachineGuid"
         ).takeIf { it.isNotBlank() }

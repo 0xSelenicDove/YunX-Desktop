@@ -1,5 +1,6 @@
 package com.yunx.app.ui.screens
 
+import androidx.compose.material.icons.automirrored.outlined.DriveFileMove
 import com.yunx.app.ui.theme.Motion
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.clickable
@@ -22,7 +23,6 @@ import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Download
-import androidx.compose.material.icons.outlined.DriveFileMove
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.FolderOpen
@@ -296,7 +296,7 @@ private fun ActionMenu(
             onClick = onShare
         )
         ActionItem(
-            icon = Icons.Outlined.DriveFileMove,
+            icon = Icons.AutoMirrored.Outlined.DriveFileMove,
             title = "移动到",
             desc = "移动到网盘的其他目录",
             tint = MaterialTheme.colorScheme.primary,
@@ -463,7 +463,7 @@ private fun MoveStep(
             if (operating) {
                 CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
             } else {
-                Icon(Icons.Outlined.DriveFileMove, contentDescription = null, modifier = Modifier.size(18.dp))
+                Icon(Icons.AutoMirrored.Outlined.DriveFileMove, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("移动到此处（$dirName）")
             }
@@ -994,7 +994,7 @@ private fun BatchMenu(
             onClick = onShare
         )
         ActionItem(
-            icon = Icons.Outlined.DriveFileMove,
+            icon = Icons.AutoMirrored.Outlined.DriveFileMove,
             title = "移动到",
             desc = "批量移动到网盘的其他目录",
             tint = MaterialTheme.colorScheme.primary,
@@ -1206,7 +1206,7 @@ private fun BatchMoveStep(
             if (operating) {
                 CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
             } else {
-                Icon(Icons.Outlined.DriveFileMove, contentDescription = null, modifier = Modifier.size(18.dp))
+                Icon(Icons.AutoMirrored.Outlined.DriveFileMove, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("移动到此处（$dirName）")
             }

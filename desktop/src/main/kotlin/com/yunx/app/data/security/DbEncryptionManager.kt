@@ -41,7 +41,7 @@ object DbEncryptionManager {
         val text = runCatching { String(file.readBytes(), Charsets.UTF_8) }.getOrNull() ?: return null
         return when {
             text.contains(":mk:v1:") -> DbEncryptionLevel.NORMAL
-            text.contains(":dpapi:v1:") -> DbEncryptionLevel.STRICT
+            text.contains(":dpapi:v1:") || text.contains(":keychain:v1:") -> DbEncryptionLevel.STRICT
             else -> null
         }
     }

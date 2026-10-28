@@ -1,5 +1,6 @@
 package com.yunx.app.ui.screens
 
+import androidx.compose.material.icons.automirrored.outlined.DriveFileMove
 import com.yunx.app.ui.SnackbarController
 import com.yunx.app.ui.BackHandler
 import com.yunx.app.ui.theme.Motion
@@ -32,7 +33,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.CreateNewFolder
-import androidx.compose.material.icons.outlined.DriveFileMove
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.AlertDialog
@@ -324,7 +324,7 @@ fun CloudDriveScreen(
                                 batchInitial = com.yunx.app.ui.screens.BatchStep.SHARE
                                 showBatchActions = true
                             },
-                            MultiSelectAction("移动", Icons.Outlined.DriveFileMove, MaterialTheme.colorScheme.primary) {
+                            MultiSelectAction("移动", Icons.AutoMirrored.Outlined.DriveFileMove, MaterialTheme.colorScheme.primary) {
                                 batchInitial = com.yunx.app.ui.screens.BatchStep.MOVE
                                 showBatchActions = true
                             },

@@ -1,5 +1,6 @@
 package com.yunx.app.ui.screens
 
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -46,7 +47,6 @@ import androidx.compose.material.icons.outlined.Favorite
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.Storage
@@ -72,7 +72,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.res.painterResource
+import com.yunx.app.ui.components.rememberClasspathPainter
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -279,7 +279,7 @@ private fun WelcomePage() {
     OnboardingPage(centerVertically = true) {
         // 应用图标：圆角 + 投影，形成"浮在 blob 上"的观感
         Image(
-            painter = painterResource("about_icon.png"),
+            painter = rememberClasspathPainter("about_icon.png"),
             contentDescription = "云析图标",
             modifier = Modifier
                 .size(120.dp)
@@ -389,7 +389,7 @@ private fun GitHubCard() {
                 )
             }
             Icon(
-                imageVector = Icons.Outlined.OpenInNew,
+                imageVector = Icons.AutoMirrored.Outlined.OpenInNew,
                 contentDescription = null,
                 modifier = Modifier.size(18.dp),
                 tint = MaterialTheme.colorScheme.outline
@@ -434,7 +434,7 @@ private fun QQGroupPill() {
             )
             Spacer(modifier = Modifier.width(6.dp))
             Icon(
-                imageVector = Icons.Outlined.OpenInNew,
+                imageVector = Icons.AutoMirrored.Outlined.OpenInNew,
                 contentDescription = "复制群号",
                 modifier = Modifier.size(14.dp),
                 tint = MaterialTheme.colorScheme.onPrimaryContainer
