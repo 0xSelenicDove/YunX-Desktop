@@ -11,6 +11,8 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Image
+import com.yunx.app.ui.components.rememberClasspathPainter
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -92,7 +94,6 @@ private data class DriveAccount(
     val id: String,
     val name: String,
     val description: String,
-    val avatarText: String,
     val isLoggedIn: Boolean = false
 )
 
@@ -161,11 +162,11 @@ fun DriveScreen(
     onLanzouLogout: () -> Unit,
     /** 是否已配置 GitHub Token（控制 GitHub 卡片副标题与登录态样式） */
     githubHasToken: Boolean = false,
-    /** 点击 GitHub 卡片：已配置 Token 时进入「我的主页」；未配置时打开 Token 管理弹窗 */
+    /** 点击 GitHub 卡片：已登录 / Token 时进入「我的主页」；未配置时打开 Token 管理弹窗 */
     onGitHubTokenClick: () -> Unit = {},
-    /** 已配置 Token 时点击卡片主体：进入当前 Token 账号的仓库列表 */
+    /** 已登录 / Token 时点击卡片主体：进入当前 Token 账号的仓库列表 */
     onGitHubBrowseHome: () -> Unit = {},
-    /** 「更多」菜单中清除 Token（二次确认后回调） */
+    /** 「更多」菜单中退出登录（二次确认后回调） */
     onGitHubClearToken: () -> Unit = {},
     /** 多账号：账号列表 / 设主账号 / 改备注 / 退出单个账号 */
     multiAccount: MultiAccountViewModel,
@@ -193,7 +194,7 @@ fun DriveScreen(
     var showGuangYaSheet by remember { mutableStateOf(false) }
     var showILanzouSheet by remember { mutableStateOf(false) }
     var showLanzouSheet by remember { mutableStateOf(false) }
-    // GitHub 卡片「更多」菜单（浏览主页 / 配置 Token / 清除 Token）
+    // GitHub 卡片「更多」菜单（浏览主页 / 登录 / Token / 退出登录）
     var showGitHubSheet by remember { mutableStateOf(false) }
     // 夸克云盘浏览：网盘 Tab 内切换（非全屏），切 Tab 再回来仍保留
     var showCloud by rememberSaveable { mutableStateOf(false) }
@@ -221,78 +222,67 @@ fun DriveScreen(
         id = "quark",
         name = "夸克网盘",
         description = quarkAccount?.nickname?.let { maskAccountText(it) } ?: "点击登录，支持解析下载",
-        avatarText = "夸",
         isLoggedIn = quarkAccount != null
     )
     val uc = DriveAccount(
         id = "uc",
         name = "UC网盘",
         description = ucAccount?.nickname?.let { maskAccountText(it) } ?: "点击登录，支持解析下载",
-        avatarText = "UC",
         isLoggedIn = ucAccount != null
     )
     val xunlei = DriveAccount(
         id = "xunlei",
         name = "迅雷网盘",
         description = xunleiAccount?.nickname?.let { maskAccountText(it) } ?: "点击登录，支持解析下载",
-        avatarText = "迅",
         isLoggedIn = xunleiAccount != null
     )
     val baidu = DriveAccount(
         id = "baidu",
         name = "百度网盘",
         description = baiduAccount?.nickname?.let { maskAccountText(it) } ?: "点击登录，支持解析下载",
-        avatarText = "度",
         isLoggedIn = baiduAccount != null
     )
     val c139 = DriveAccount(
         id = "c139",
         name = "139网盘",
         description = c139Account?.nickname?.let { maskAccountText(it) } ?: "点击登录，支持解析下载",
-        avatarText = "139",
         isLoggedIn = c139Account != null
     )
     val pan123 = DriveAccount(
         id = "pan123",
         name = "123云盘",
         description = pan123Account?.nickname?.let { maskAccountText(it) } ?: "点击登录，支持解析下载",
-        avatarText = "123",
         isLoggedIn = pan123Account != null
     )
     val pan115 = DriveAccount(
         id = "pan115",
         name = "115网盘",
         description = pan115Account?.nickname?.let { maskAccountText(it) } ?: "点击登录，支持解析下载",
-        avatarText = "115",
         isLoggedIn = pan115Account != null
     )
     val guangya = DriveAccount(
         id = "guangya",
         name = "光鸭云盘",
         description = guangyaAccount?.nickname?.let { maskAccountText(it) } ?: "点击登录，支持解析下载",
-        avatarText = "光",
         isLoggedIn = guangyaAccount != null
     )
     val ilanzou = DriveAccount(
         id = "ilanzou",
         name = "蓝奏云优享版",
         description = ilanzouAccount?.nickname?.let { maskAccountText(it) } ?: "点击登录，支持解析下载",
-        avatarText = "优",
         isLoggedIn = ilanzouAccount != null
     )
     val lanzou = DriveAccount(
         id = "lanzou",
         name = "蓝奏云",
         description = lanzouAccount?.nickname?.let { maskAccountText(it) } ?: "点击登录，支持解析下载",
-        avatarText = "蓝",
         isLoggedIn = lanzouAccount != null
     )
     // GitHub：把 GitHub 当网盘浏览下载；此处仅做 Token 管理（提升 API 限额），浏览入口在解析页
     val github = DriveAccount(
         id = "github",
         name = "GitHub",
-        description = if (githubHasToken) "已配置 Token" else "点击配置 Token",
-        avatarText = "GH",
+        description = if (githubHasToken) "已登录 GitHub" else "使用 GitHub 账号登录",
         isLoggedIn = githubHasToken
     )
     val others = remember {
@@ -567,7 +557,7 @@ fun DriveScreen(
                     DriveAccountCard(account = account, modifier = animateItemIfAllowed())
                 }
                 item(key = github.id) {
-                    // GitHub：已配置 Token 点击主体进入「我的主页」；未配置打开 Token 弹窗；更多按钮在登录后显示
+                    // GitHub：已登录 / Token 点击主体进入「我的主页」；未配置打开 Token 弹窗；更多按钮在登录后显示
                     DriveAccountCard(
                         account = github,
                         onClick = if (githubHasToken) onGitHubBrowseHome else onGitHubTokenClick,
@@ -767,7 +757,7 @@ fun DriveScreen(
         )
     }
 
-    // GitHub 卡片「更多」菜单：浏览我的主页 / 配置 Token / 清除 Token（清除由上层做二次确认）
+    // GitHub 卡片「更多」菜单：浏览我的主页 / 登录 / Token / 退出登录（清除由上层做二次确认）
     if (showGitHubSheet) {
         FadeAlertDialog(
             visible = true,
@@ -788,7 +778,7 @@ fun DriveScreen(
                             onGitHubTokenClick()
                         },
                         modifier = Modifier.fillMaxWidth()
-                    ) { Text("配置 Token") }
+                    ) { Text("登录 / Token") }
                     TextButton(
                         onClick = {
                             showGitHubSheet = false
@@ -796,7 +786,7 @@ fun DriveScreen(
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("清除 Token", color = MaterialTheme.colorScheme.error)
+                        Text("退出登录", color = MaterialTheme.colorScheme.error)
                     }
                 }
             },
@@ -859,24 +849,14 @@ private fun DriveAccountCardContent(
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // 品牌头像（暂用首字母，后续可替换为品牌图标）；尺寸与视频平台 Logo 对齐（#185：48→40dp）
-        Surface(
-            modifier = Modifier.size(40.dp),
-            shape = CircleShape,
-            color = if (account.isLoggedIn) {
-                MaterialTheme.colorScheme.primaryContainer
-            } else {
-                MaterialTheme.colorScheme.surfaceContainerHighest
-            }
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Text(
-                    text = account.avatarText,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-            }
+        // Bundle service logos so both list and grid work offline.
+        Surface(modifier = Modifier.size(40.dp), shape = CircleShape,
+            color = androidx.compose.ui.graphics.Color.White) {
+            Image(
+                painter = rememberClasspathPainter("drive_logos/${account.id}.png"),
+                contentDescription = null,
+                modifier = Modifier.padding(4.dp)
+            )
         }
 
         Column(

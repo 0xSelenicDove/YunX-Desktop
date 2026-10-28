@@ -153,3 +153,23 @@ SecItem API 将随机凭证主密钥保存在当前用户的 Keychain，`credent
 钥匙串锁定、拒绝授权或项目丢失时不轮换主密钥、不覆盖引用文件。历史项目保留供旧数据库备份使用。
 仅复制数据库与引用文件不足以在另一台 Mac 恢复账号；换机前应导出应用内的加密账号备份。
 这些档位均不会加密数据库中的文件名、URL 等元数据，SQLCipher 整库加密仍未实现。
+
+## GitHub browser sign-in
+
+The GitHub account card uses OAuth Device Flow in the system browser. The fork-owned
+OAuth app has Device Flow enabled; its public client ID is in `GitHubDeviceAuth.kt`.
+No client secret is generated or bundled, and the default flow requests no OAuth
+scopes (public repository browsing only). Tokens use the existing encrypted token
+store. Expired tokens require signing in again; refresh tokens are not retained.
+Manual PAT entry remains under Advanced for explicitly selected private repositories.
+Fork maintainers should register their own OAuth app and replace the public client ID.
+
+The OAuth HTTP client retains standard certificate verification, rejects redirects,
+and cancels polling when the dialog closes. Focused checks:
+
+```sh
+./run.sh :desktop:test --tests '*GitHubDeviceAuthTest'
+```
+
+Service logos are bundled for offline use in both account layouts. Their official
+website sources are listed in `desktop/src/main/resources/drive_logos/SOURCES.md`.

@@ -28,8 +28,6 @@ import androidx.compose.material.icons.outlined.Bookmarks
 import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.outlined.Visibility
-import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -59,8 +57,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.yunx.app.AppContext
@@ -83,7 +79,6 @@ import com.yunx.app.data.network.LanzouApi
 import com.yunx.app.data.network.Pan115Api
 import com.yunx.app.data.network.Pan123Api
 import com.yunx.app.data.network.QuarkApi
-import com.yunx.app.data.network.TokenCheck
 import com.yunx.app.data.network.UCApi
 import com.yunx.app.data.network.XunleiApi
 import com.yunx.app.data.network.video.VideoPlatform
@@ -1366,96 +1361,13 @@ fun MainScreen(
             }
         )
 
-        // GitHub Token 配置弹窗（网盘页入口）：AES-GCM 加密存储，输入用密码可见性切换
         if (showGitHubTokenDialog) {
-            var tokenInput by rememberSaveable { mutableStateOf(GitHubTokenStore.getToken() ?: "") }
-            var passwordVisible by remember { mutableStateOf(false) }
-            // 校验失败提示（显示在输入框下方），修改输入即清除
-            var tokenError by remember { mutableStateOf<String?>(null) }
-            FadeAlertDialog(
-                visible = true,
-                onDismissRequest = { showGitHubTokenDialog = false },
-                title = { Text("GitHub Token") },
-                text = {
-                    Column {
-                        Text(
-                            text = "Token 仅用于提升 API 限额（匿名 60/小时，认证后 5000/小时）。经 AES-GCM 加密存储，不会明文保存。",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                        Spacer(Modifier.height(10.dp))
-                        Text(
-                            text = "如何获取 Token：",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            text = "1. 浏览器打开 GitHub，右上角头像 → Settings\n" +
-                                "2. 左侧 Developer settings → Personal access tokens → Tokens (classic) → Generate new token\n" +
-                                "3. 勾选 public_repo 即可浏览公开仓库；如需在主页看到自己的私有仓库，再勾选 repo\n" +
-                                "4. 有效期建议选 90 天或 No expiration，生成后复制粘贴到上方输入框",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            text = "安全提示：仅给最小权限，勿勾选删除/管理类权限；Token 不清空保存即可清除。",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(12.dp))
-                        OutlinedTextField(
-                            value = tokenInput,
-                            onValueChange = {
-                                tokenInput = it
-                                tokenError = null
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            isError = tokenError != null,
-                            label = { Text("Personal Access Token") },
-                            supportingText = { tokenError?.let { Text(it) } },
-                            visualTransformation = if (passwordVisible) VisualTransformation.None
-                            else PasswordVisualTransformation(),
-                            trailingIcon = {
-                                IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                                    Icon(
-                                        if (passwordVisible) Icons.Outlined.Visibility
-                                        else Icons.Outlined.VisibilityOff,
-                                        contentDescription = if (passwordVisible) "隐藏" else "显示"
-                                    )
-                                }
-                            }
-                        )
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = {
-                        val input = tokenInput.trim()
-                        if (input.isBlank()) {
-                            // 清空即清除 Token（无需联网校验）
-                            GitHubTokenStore.setToken(null)
-                            githubHasTokenState = false
-                            showGitHubTokenDialog = false
-                            SnackbarController.show("已清除 GitHub Token")
-                        } else {
-                            // 保存前先校验：无效 Token 会让 GitHub 拒绝之后的所有请求（含公开仓库解析）
-                            scope.launch {
-                                when (val check = githubApi.validateToken(input)) {
-                                    is TokenCheck.Valid -> {
-                                        GitHubTokenStore.setToken(input)
-                                        githubHasTokenState = true
-                                        showGitHubTokenDialog = false
-                                        SnackbarController.show("GitHub Token 已保存（@${check.login}）")
-                                    }
-                                    TokenCheck.Invalid -> tokenError = "Token 无效或已过期，请重新生成后再保存"
-                                    TokenCheck.Unknown -> tokenError = "无法校验 Token（网络异常），请联网后重试"
-                                }
-                            }
-                        }
-                    }) { Text("保存") }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showGitHubTokenDialog = false }) { Text("取消") }
+            com.yunx.app.ui.login.GitHubSignInDialog(
+                onDismiss = { showGitHubTokenDialog = false },
+                onSignedIn = {
+                    githubHasTokenState = true
+                    showGitHubTokenDialog = false
+                    SnackbarController.show("已登录 GitHub")
                 }
             )
         }
@@ -1465,14 +1377,14 @@ fun MainScreen(
             FadeAlertDialog(
                 visible = true,
                 onDismissRequest = { showGitHubClearConfirm = false },
-                title = { Text("清除 GitHub Token？") },
+                title = { Text("退出 GitHub 登录？") },
                 text = { Text("清除后 GitHub API 回退匿名限额（60 次/小时/IP）。") },
                 confirmButton = {
                     TextButton(onClick = {
                         GitHubTokenStore.setToken(null)
                         githubHasTokenState = false
                         showGitHubClearConfirm = false
-                        SnackbarController.show("已清除 GitHub Token")
+                        SnackbarController.show("已退出 GitHub 登录")
                     }) { Text("清除", color = MaterialTheme.colorScheme.error) }
                 },
                 dismissButton = {
